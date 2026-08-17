@@ -47,7 +47,33 @@ function hasPerson(parsed: { userId?: string | null; userEmail?: string | null; 
   return Boolean(parsed.userId || parsed.userEmail || parsed.userName);
 }
 
-/** Sera4 puts the person on the close (event 0). Copy that onto the matching unlock. */
+async function withLastOpenerOnClose(parsed: ParsedLockEvent): Promise<ParsedLockEvent> {
+  if (parsed.action !== "close" || hasPerson(parsed)) return parsed;
+  const sql = await ensureDb();
+  const rows = await sql<{ user_id: string | null; user_name: string | null; user_email: string | null }[]>`
+    SELECT user_id, user_name, user_email FROM access_events
+    WHERE action = 'open'
+      AND (user_id IS NOT NULL OR user_email IS NOT NULL OR user_name IS NOT NULL)
+      AND occurred_at <= ${parsed.occurredAt}
+      AND (
+        ${parsed.lockId || ""} = ''
+        OR lock_id = ${parsed.lockId}
+        OR hardware_id = ${parsed.hardwareId}
+      )
+    ORDER BY occurred_at DESC, id DESC
+    LIMIT 1
+  `;
+  const row = rows[0];
+  if (!row) return parsed;
+  return {
+    ...parsed,
+    userId: row.user_id,
+    userName: row.user_name,
+    userEmail: row.user_email,
+  };
+}
+
+/** If a close includes the person and the matching unlock does not, copy identity onto that unlock. */
 export async function applyCloserToLastOpen(parsed: ParsedLockEvent): Promise<ParsedLockEvent | null> {
   if (parsed.action !== "close" || !hasPerson(parsed)) return null;
   const sql = await ensureDb();
@@ -117,7 +143,7 @@ export async function insertAccessEvent(input: {
   raw: unknown;
 }) {
   const sql = await ensureDb();
-  const parsed = input.parsed;
+  const parsed = await withLastOpenerOnClose(input.parsed);
   const createdAt = new Date().toISOString();
   try {
     const rows = await sql<{ id: number }[]>`

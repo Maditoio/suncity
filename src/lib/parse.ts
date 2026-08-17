@@ -71,10 +71,11 @@ export function inferAction(source: Record<string, unknown> | null): AccessActio
   if (!source) return "unknown";
   const labeled = str(source.action)?.toLowerCase();
   if (labeled === "open" || labeled === "close") return labeled;
-  // Sera4 lock_event.create: event 1 is the unlock, event 0 is the close.
-  // The person is on event 0; event 1 often has only the key.
-  if (source.event === 1 || source.event === "1") return "open";
-  if (source.event === 0 || source.event === "0") return "close";
+  // Physical unlock includes opened_via and the user. Sera4 sends that as event 0.
+  // Event 1 is the lock snapping closed and often has no user.
+  if (source.opened_via != null && source.opened_via !== "") return "open";
+  if (source.event === 0 || source.event === "0") return "open";
+  if (source.event === 1 || source.event === "1") return "close";
   const openFlag = pick(source, ["opened", "is_open", "isOpen", "unlocked"]);
   if (openFlag === true) return "open";
   if (openFlag === false) return "close";

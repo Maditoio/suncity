@@ -194,7 +194,7 @@ async function repairWebhookEvents(db: postgres.Sql) {
     `;
   }
 
-  const opens = await db<{
+  const closes = await db<{
     id: number;
     lock_id: string | null;
     hardware_id: string | null;
@@ -202,22 +202,22 @@ async function repairWebhookEvents(db: postgres.Sql) {
     occurred_at: string;
   }[]>`
     SELECT id, lock_id, hardware_id, key_id, occurred_at FROM access_events
-    WHERE action = 'open'
+    WHERE action = 'close'
       AND user_id IS NULL AND user_name IS NULL AND user_email IS NULL
     ORDER BY occurred_at ASC, id ASC
   `;
-  for (const row of opens) {
-    const nextClose = await db<{
+  for (const row of closes) {
+    const prevOpen = await db<{
       user_id: string | null;
       user_name: string | null;
       user_email: string | null;
       key_id: string | null;
     }[]>`
       SELECT user_id, user_name, user_email, key_id FROM access_events
-      WHERE action = 'close'
+      WHERE action = 'open'
         AND (user_id IS NOT NULL OR user_email IS NOT NULL OR user_name IS NOT NULL)
-        AND occurred_at >= ${row.occurred_at}
-        AND occurred_at <= ${new Date(new Date(row.occurred_at).getTime() + 30 * 60 * 1000).toISOString()}
+        AND occurred_at <= ${row.occurred_at}
+        AND occurred_at >= ${new Date(new Date(row.occurred_at).getTime() - 30 * 60 * 1000).toISOString()}
         AND (
           ${row.lock_id || ""} = ''
           OR lock_id = ${row.lock_id}
@@ -228,16 +228,16 @@ async function repairWebhookEvents(db: postgres.Sql) {
           OR key_id IS NULL
           OR key_id = ${row.key_id}
         )
-      ORDER BY occurred_at ASC, id ASC
+      ORDER BY occurred_at DESC, id DESC
       LIMIT 1
     `;
-    if (!nextClose[0]) continue;
+    if (!prevOpen[0]) continue;
     await db`
       UPDATE access_events SET
-        user_id = ${nextClose[0].user_id},
-        user_name = ${nextClose[0].user_name},
-        user_email = ${nextClose[0].user_email},
-        key_id = COALESCE(key_id, ${nextClose[0].key_id})
+        user_id = ${prevOpen[0].user_id},
+        user_name = ${prevOpen[0].user_name},
+        user_email = ${prevOpen[0].user_email},
+        key_id = COALESCE(key_id, ${prevOpen[0].key_id})
       WHERE id = ${row.id}
     `;
   }
