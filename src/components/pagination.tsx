@@ -37,19 +37,16 @@ export function Pager({
   return (
     <div className="flex flex-wrap items-center justify-between gap-3 border-t border-line px-5 py-3 text-sm">
       <p className="text-text-2">
-        {total} {noun}
-        {pages > 1 ? ` · page ${page} of ${pages}` : ""}
+        {total} {noun} · page {page} of {pages}
       </p>
-      {pages > 1 ? (
-        <div className="flex items-center gap-2">
-          <Button type="button" variant="secondary" disabled={page <= 1} onClick={() => onPage(page - 1)}>
-            Previous
-          </Button>
-          <Button type="button" variant="secondary" disabled={page >= pages} onClick={() => onPage(page + 1)}>
-            Next
-          </Button>
-        </div>
-      ) : null}
+      <div className="flex items-center gap-2">
+        <Button type="button" variant="secondary" disabled={page <= 1} onClick={() => onPage(page - 1)}>
+          Previous
+        </Button>
+        <Button type="button" variant="secondary" disabled={page >= pages} onClick={() => onPage(page + 1)}>
+          Next
+        </Button>
+      </div>
     </div>
   );
 }
