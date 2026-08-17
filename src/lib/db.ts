@@ -194,32 +194,88 @@ async function repairWebhookEvents(db: postgres.Sql) {
     `;
   }
 
-  const closes = await db<{ id: number; lock_id: string | null; hardware_id: string | null; occurred_at: string }[]>`
-    SELECT id, lock_id, hardware_id, occurred_at FROM access_events
-    WHERE action = 'close'
+  const opens = await db<{
+    id: number;
+    lock_id: string | null;
+    hardware_id: string | null;
+    key_id: string | null;
+    occurred_at: string;
+  }[]>`
+    SELECT id, lock_id, hardware_id, key_id, occurred_at FROM access_events
+    WHERE action = 'open'
       AND user_id IS NULL AND user_name IS NULL AND user_email IS NULL
+    ORDER BY occurred_at ASC, id ASC
   `;
-  for (const row of closes) {
-    const prev = await db<{ user_id: string | null; user_name: string | null; user_email: string | null }[]>`
-      SELECT user_id, user_name, user_email FROM access_events
-      WHERE action = 'open'
+  for (const row of opens) {
+    const nextClose = await db<{
+      user_id: string | null;
+      user_name: string | null;
+      user_email: string | null;
+      key_id: string | null;
+    }[]>`
+      SELECT user_id, user_name, user_email, key_id FROM access_events
+      WHERE action = 'close'
         AND (user_id IS NOT NULL OR user_email IS NOT NULL OR user_name IS NOT NULL)
-        AND occurred_at <= ${row.occurred_at}
+        AND occurred_at >= ${row.occurred_at}
+        AND occurred_at <= ${new Date(new Date(row.occurred_at).getTime() + 30 * 60 * 1000).toISOString()}
         AND (
           ${row.lock_id || ""} = ''
           OR lock_id = ${row.lock_id}
           OR hardware_id = ${row.hardware_id}
         )
+        AND (
+          ${row.key_id || ""} = ''
+          OR key_id IS NULL
+          OR key_id = ${row.key_id}
+        )
+      ORDER BY occurred_at ASC, id ASC
+      LIMIT 1
+    `;
+    if (!nextClose[0]) continue;
+    await db`
+      UPDATE access_events SET
+        user_id = ${nextClose[0].user_id},
+        user_name = ${nextClose[0].user_name},
+        user_email = ${nextClose[0].user_email},
+        key_id = COALESCE(key_id, ${nextClose[0].key_id})
+      WHERE id = ${row.id}
+    `;
+  }
+
+  const unknownAlerts = await db<{ id: number; occurred_at: string; message: string }[]>`
+    SELECT id, occurred_at, message FROM alerts
+    WHERE user_name IS NULL AND user_email IS NULL AND user_id IS NULL
+  `;
+  for (const alert of unknownAlerts) {
+    const match = await db<{
+      user_id: string | null;
+      user_name: string | null;
+      user_email: string | null;
+      key_id: string | null;
+    }[]>`
+      SELECT user_id, user_name, user_email, key_id FROM access_events
+      WHERE action = 'open'
+        AND (user_id IS NOT NULL OR user_email IS NOT NULL OR user_name IS NOT NULL)
+        AND occurred_at <= ${alert.occurred_at}
+        AND occurred_at >= ${new Date(new Date(alert.occurred_at).getTime() - 10 * 60 * 1000).toISOString()}
       ORDER BY occurred_at DESC, id DESC
       LIMIT 1
     `;
-    if (!prev[0]) continue;
+    const user = match[0];
+    if (!user) continue;
+    const who =
+      user.user_name && user.user_email
+        ? `${user.user_name} (${user.user_email})`
+        : user.user_name || user.user_email || (user.user_id ? `User ${user.user_id}` : null);
+    if (!who) continue;
     await db`
-      UPDATE access_events SET
-        user_id = ${prev[0].user_id},
-        user_name = ${prev[0].user_name},
-        user_email = ${prev[0].user_email}
-      WHERE id = ${row.id}
+      UPDATE alerts SET
+        user_id = ${user.user_id},
+        user_name = ${user.user_name},
+        user_email = ${user.user_email},
+        key_id = COALESCE(key_id, ${user.key_id}),
+        message = ${alert.message.replace("Unknown user", who)}
+      WHERE id = ${alert.id}
     `;
   }
 }

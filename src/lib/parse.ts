@@ -67,21 +67,14 @@ function inferEnvelopeAction(source: Record<string, unknown> | null): AccessActi
   return "unknown";
 }
 
-function isAccessOpen(source: Record<string, unknown>) {
-  const hasOpenedVia = source.opened_via != null && source.opened_via !== "";
-  const hasKey = Boolean(asRecord(pick(source, ["key"])) || pick(source, ["key_id", "keyId"]));
-  const hasUser = Boolean(nestedUser(source));
-  return hasOpenedVia || hasUser || hasKey;
-}
-
 export function inferAction(source: Record<string, unknown> | null): AccessAction {
   if (!source) return "unknown";
   const labeled = str(source.action)?.toLowerCase();
   if (labeled === "open" || labeled === "close") return labeled;
-  // Sera4 puts the person, key, and opened_via on the access itself. That payload
-  // is the open even when `event` is 0; the matching event without a user is the close.
-  if (isAccessOpen(source)) return "open";
-  if (source.event === 0 || source.event === "0" || source.event === 1 || source.event === "1") return "close";
+  // Sera4 lock_event.create: event 1 is the unlock, event 0 is the close.
+  // The person is on event 0; event 1 often has only the key.
+  if (source.event === 1 || source.event === "1") return "open";
+  if (source.event === 0 || source.event === "0") return "close";
   const openFlag = pick(source, ["opened", "is_open", "isOpen", "unlocked"]);
   if (openFlag === true) return "open";
   if (openFlag === false) return "close";

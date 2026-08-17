@@ -43,31 +43,72 @@ function mapEvent(row: EventRow): AccessEvent {
   };
 }
 
-async function withLastOpener(parsed: ParsedLockEvent): Promise<ParsedLockEvent> {
-  if (parsed.action !== "close") return parsed;
-  if (parsed.userId || parsed.userEmail || parsed.userName) return parsed;
+function hasPerson(parsed: { userId?: string | null; userEmail?: string | null; userName?: string | null }) {
+  return Boolean(parsed.userId || parsed.userEmail || parsed.userName);
+}
+
+/** Sera4 puts the person on the close (event 0). Copy that onto the matching unlock. */
+export async function applyCloserToLastOpen(parsed: ParsedLockEvent): Promise<ParsedLockEvent | null> {
+  if (parsed.action !== "close" || !hasPerson(parsed)) return null;
   const sql = await ensureDb();
-  const rows = await sql<{ user_id: string | null; user_name: string | null; user_email: string | null }[]>`
-    SELECT user_id, user_name, user_email FROM access_events
+  const windowStart = new Date(new Date(parsed.occurredAt).getTime() - 30 * 60 * 1000).toISOString();
+  const rows = await sql<{
+    id: number;
+    occurred_at: string;
+    key_id: string | null;
+    lock_id: string | null;
+    lock_name: string | null;
+    hardware_id: string | null;
+  }[]>`
+    SELECT id, occurred_at, key_id, lock_id, lock_name, hardware_id FROM access_events
     WHERE action = 'open'
-      AND (user_id IS NOT NULL OR user_email IS NOT NULL OR user_name IS NOT NULL)
+      AND user_id IS NULL AND user_email IS NULL AND user_name IS NULL
       AND occurred_at <= ${parsed.occurredAt}
+      AND occurred_at >= ${windowStart}
       AND (
         ${parsed.lockId || ""} = ''
         OR lock_id = ${parsed.lockId}
         OR hardware_id = ${parsed.hardwareId}
       )
+      AND (
+        ${parsed.keyId || ""} = ''
+        OR key_id IS NULL
+        OR key_id = ${parsed.keyId}
+      )
     ORDER BY occurred_at DESC, id DESC
     LIMIT 1
   `;
   const row = rows[0];
-  if (!row) return parsed;
+  if (!row) return null;
+  await sql`
+    UPDATE access_events SET
+      user_id = ${parsed.userId},
+      user_name = ${parsed.userName},
+      user_email = ${parsed.userEmail},
+      key_id = COALESCE(key_id, ${parsed.keyId})
+    WHERE id = ${row.id}
+  `;
   return {
     ...parsed,
-    userId: row.user_id,
-    userName: row.user_name,
-    userEmail: row.user_email,
+    action: "open",
+    occurredAt: row.occurred_at,
+    keyId: parsed.keyId || row.key_id,
+    lockId: parsed.lockId || row.lock_id,
+    lockName: parsed.lockName || row.lock_name,
+    hardwareId: parsed.hardwareId || row.hardware_id,
   };
+}
+
+export async function evaluateIdentifiedAccess(parsed: ParsedLockEvent) {
+  if (parsed.action === "open" && hasPerson(parsed)) {
+    return evaluateAlerts(parsed);
+  }
+  if (parsed.action === "close" && hasPerson(parsed)) {
+    const identified = await applyCloserToLastOpen(parsed);
+    if (!identified) return [];
+    return evaluateAlerts(identified);
+  }
+  return [];
 }
 
 export async function insertAccessEvent(input: {
@@ -76,7 +117,7 @@ export async function insertAccessEvent(input: {
   raw: unknown;
 }) {
   const sql = await ensureDb();
-  const parsed = await withLastOpener(input.parsed);
+  const parsed = input.parsed;
   const createdAt = new Date().toISOString();
   try {
     const rows = await sql<{ id: number }[]>`
@@ -246,6 +287,7 @@ export async function listWebhookLogs(limit = 50): Promise<WebhookLog[]> {
 
 export async function evaluateAlerts(parsed: ParsedLockEvent) {
   if (parsed.action !== "open") return [];
+  if (!parsed.userId && !parsed.userEmail && !parsed.userName) return [];
   const settings = await getSettings();
   const sql = await ensureDb();
   const key = userKey(parsed);
@@ -582,7 +624,7 @@ export async function ingestRecords(source: "webhook" | "api", records: unknown[
     const result = await insertAccessEvent({ source, parsed, raw: record });
     if (!result.inserted) continue;
     inserted += 1;
-    alerts += (await evaluateAlerts(parsed)).length;
+    alerts += (await evaluateIdentifiedAccess(parsed)).length;
   }
   return { inserted, alerts };
 }

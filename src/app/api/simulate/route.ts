@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireApiUser } from "@/lib/auth";
-import { evaluateAlerts, insertAccessEvent, logWebhook } from "@/lib/store";
+import { evaluateIdentifiedAccess, insertAccessEvent, logWebhook } from "@/lib/store";
 import { getSettings } from "@/lib/settings";
 
 export async function POST(request: Request) {
@@ -35,7 +35,7 @@ export async function POST(request: Request) {
     parsedOk: true,
     note: `${parsed.action} by ${parsed.userName}`,
   });
-  const alerts = await evaluateAlerts(parsed);
+  const alerts = await evaluateIdentifiedAccess(parsed);
   return NextResponse.json({ ok: true, parsed, alerts });
 }
 

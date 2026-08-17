@@ -2,7 +2,7 @@ import { timingSafeEqual } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { extractHistoryRecords, isMonitoredLock, parseLockEvent } from "@/lib/parse";
 import { getSettings } from "@/lib/settings";
-import { evaluateAlerts, insertAccessEvent, logWebhook } from "@/lib/store";
+import { evaluateIdentifiedAccess, insertAccessEvent, logWebhook } from "@/lib/store";
 
 function headersObject(request: NextRequest) {
   const headers: Record<string, string> = {};
@@ -99,7 +99,7 @@ export async function handleLockWebhook(request: NextRequest, pathToken?: string
     const result = await insertAccessEvent({ source: "webhook", parsed: item.parsed, raw: item.record });
     if (!result.inserted) continue;
     inserted += 1;
-    alerts += (await evaluateAlerts(item.parsed)).length;
+    alerts += (await evaluateIdentifiedAccess(item.parsed)).length;
   }
 
   if (parsedEvents.length) {
