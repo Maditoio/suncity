@@ -7,7 +7,7 @@ import { Button, Field, Input } from "@/components/ui";
 
 export default function LoginPage() {
   const router = useRouter();
-  const [username, setUsername] = useState("admin");
+  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -45,7 +45,12 @@ export default function LoginPage() {
         </div>
         <form onSubmit={onSubmit} className="space-y-4">
           <Field label="Username">
-            <Input value={username} onChange={(e) => setUsername(e.target.value)} autoComplete="username" />
+            <Input
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              autoComplete="username"
+              required
+            />
           </Field>
           <Field label="Password">
             <Input
@@ -53,6 +58,7 @@ export default function LoginPage() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               autoComplete="current-password"
+              required
             />
           </Field>
           {error ? <p className="text-sm text-danger">{error}</p> : null}
@@ -60,10 +66,7 @@ export default function LoginPage() {
             {busy ? "Signing in…" : "Sign in"}
           </Button>
         </form>
-        <p className="mt-6 text-sm text-text-2">
-          Default login is <span className="font-medium text-text">admin</span> /{" "}
-          <span className="font-medium text-text">lockwatch</span>. Change it in Settings after you sign in.
-        </p>
+        <p className="mt-6 text-sm text-text-2">Admin accounts live in PostgreSQL. Change the password in Settings after the first sign-in.</p>
       </div>
     </div>
   );

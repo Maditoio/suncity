@@ -193,7 +193,7 @@ export default function OverviewPage() {
         </Card>
       </section>
 
-      <Card title="Webhook for lock open/close" description="Paste this URL into Sera4 for live open/close events.">
+      <Card title="Webhook for lock open/close" description="Paste this exact URL into Sera4, including the token in the path.">
         <CopyField value={data.webhookUrl} />
       </Card>
 

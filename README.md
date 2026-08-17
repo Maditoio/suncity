@@ -2,7 +2,7 @@
 
 Admin app for a Sera4 lock: pull access history, listen for open/close webhooks, and alert when one person opens the door more times than allowed in a short window.
 
-Default login: `admin` / `lockwatch` (override with `ADMIN_USERNAME` / `ADMIN_PASSWORD` before the first database seed).
+Default first admin is created in PostgreSQL from `ADMIN_USERNAME` / `ADMIN_PASSWORD` (defaults: `admin` / `lockwatch`) only when the `admins` table is empty. Sign-in always checks the database. Change the password in Settings after the first login.
 
 ## Run locally
 
@@ -11,7 +11,6 @@ Default login: `admin` / `lockwatch` (override with `ADMIN_USERNAME` / `ADMIN_PA
 
 ```bash
 DATABASE_URL=postgres://USER:PASSWORD@HOST:5432/DBNAME?sslmode=require
-SESSION_SECRET=a-long-random-string
 ADMIN_USERNAME=admin
 ADMIN_PASSWORD=lockwatch
 APP_PUBLIC_URL=http://localhost:3000
@@ -31,7 +30,7 @@ Open [http://localhost:3000](http://localhost:3000). Tables are created automati
 ## Deploy on Vercel
 
 1. Import this GitHub repo in Vercel.
-2. Add the same environment variables. Set `APP_PUBLIC_URL` to your Vercel URL, for example `https://your-app.vercel.app`.
+2. Add the same environment variables. Set `APP_PUBLIC_URL` to your Vercel URL, for example `https://your-app.vercel.app`. `ADMIN_USERNAME` and `ADMIN_PASSWORD` are used only to create the first admin row; later logins use the `admins` and `sessions` tables.
 3. Use a hosted Postgres provider and paste its connection string into `DATABASE_URL`. Prefer the pooled URL if the provider offers one (Neon pooler, Supabase transaction pooler, or Vercel Postgres).
 4. Deploy. After the first successful request, sign in and open **Settings**.
 

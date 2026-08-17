@@ -18,7 +18,6 @@ export type Settings = {
   windowMinutes: number;
   alertOnDaily: boolean;
   timezone: string;
-  adminUsername: string;
 };
 
 export type AccessEvent = {

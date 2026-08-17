@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { CopyField } from "@/components/CopyField";
 import { Button, Card, Field, Input, PageHeader, Textarea } from "@/components/ui";
 
@@ -53,8 +54,10 @@ const empty: Settings = {
 };
 
 export default function SettingsPage() {
+  const router = useRouter();
   const [form, setForm] = useState<Settings>(empty);
   const [adminPassword, setAdminPassword] = useState("");
+  const [currentPassword, setCurrentPassword] = useState("");
   const [status, setStatus] = useState("");
   const [raw, setRaw] = useState("");
 
@@ -75,7 +78,7 @@ export default function SettingsPage() {
     const response = await fetch("/api/settings", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...form, adminPassword }),
+      body: JSON.stringify({ ...form, adminPassword, currentPassword }),
     });
     const json = (await response.json()) as Settings & { error?: string };
     if (!response.ok) {
@@ -84,7 +87,9 @@ export default function SettingsPage() {
     }
     setForm(json);
     setAdminPassword("");
+    setCurrentPassword("");
     setStatus("Saved");
+    router.refresh();
   }
 
   async function testConnection() {
@@ -124,7 +129,10 @@ export default function SettingsPage() {
       />
       {status ? <p className="text-sm text-text-2">{status}</p> : null}
 
-      <Card title="Webhook URL" description="Give this URL to Sera4 for lock open/close updates. Set a public app URL first if you are local.">
+      <Card
+        title="Webhook URL"
+        description="Paste this exact URL into Sera4. The secret is in the path so it still works if query strings are stripped."
+      >
         <CopyField value={form.webhookUrl} />
       </Card>
 
@@ -206,15 +214,28 @@ export default function SettingsPage() {
         </div>
       </Card>
 
-      <Card title="Admin login">
-        <div className="grid gap-4 sm:grid-cols-2">
+      <Card
+        title="Admin login"
+        description="Stored in PostgreSQL. Enter your current password to change the username or password. Changing the password signs out other sessions."
+      >
+        <div className="grid gap-4 sm:grid-cols-3">
           <TextField label="Username" value={form.adminUsername} onChange={(v) => set("adminUsername", v)} />
+          <Field label="Current password" hint="Required only when changing username or password">
+            <Input
+              type="password"
+              value={currentPassword}
+              onChange={(e) => setCurrentPassword(e.target.value)}
+              autoComplete="current-password"
+              placeholder="Current password"
+            />
+          </Field>
           <Field label="New password" hint="Leave blank to keep the current password">
             <Input
               type="password"
               value={adminPassword}
               onChange={(e) => setAdminPassword(e.target.value)}
-              placeholder="Leave blank to keep current"
+              autoComplete="new-password"
+              placeholder="At least 8 characters"
             />
           </Field>
         </div>

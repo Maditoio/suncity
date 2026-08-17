@@ -63,6 +63,28 @@ async function migrate() {
     )
   `;
   await db`
+    CREATE TABLE IF NOT EXISTS admins (
+      id SERIAL PRIMARY KEY,
+      username TEXT NOT NULL,
+      username_key TEXT NOT NULL UNIQUE,
+      password_hash TEXT NOT NULL,
+      password_salt TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )
+  `;
+  await db`
+    CREATE TABLE IF NOT EXISTS sessions (
+      id SERIAL PRIMARY KEY,
+      admin_id INTEGER NOT NULL REFERENCES admins(id) ON DELETE CASCADE,
+      token_hash TEXT NOT NULL UNIQUE,
+      expires_at TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    )
+  `;
+  await db`CREATE INDEX IF NOT EXISTS idx_sessions_admin ON sessions(admin_id)`;
+  await db`CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at)`;
+  await db`
     CREATE TABLE IF NOT EXISTS access_events (
       id SERIAL PRIMARY KEY,
       source TEXT NOT NULL,
@@ -111,25 +133,66 @@ async function migrate() {
 
   const existing = await db`SELECT id FROM settings WHERE id = 1`;
   if (existing.length === 0) {
-    const salt = randomBytes(16).toString("hex");
-    const username = process.env.ADMIN_USERNAME || "admin";
-    const password = process.env.ADMIN_PASSWORD || "lockwatch";
     await db`
       INSERT INTO settings (
-        id, public_app_url, webhook_token, admin_username,
-        admin_password_hash, admin_password_salt, session_secret, updated_at
+        id, public_app_url, webhook_token, updated_at
       ) VALUES (
         1,
         ${process.env.APP_PUBLIC_URL || "http://localhost:3000"},
         ${randomBytes(18).toString("hex")},
-        ${username},
-        ${hashPassword(password, salt)},
-        ${salt},
-        ${process.env.SESSION_SECRET || randomBytes(32).toString("hex")},
         ${new Date().toISOString()}
       )
     `;
   }
+
+  await seedAdmin(db);
+}
+
+async function seedAdmin(db: postgres.Sql) {
+  const existing = await db`SELECT id FROM admins LIMIT 1`;
+  if (existing.length > 0) return;
+
+  const fromSettings = await db<{
+    admin_username: string;
+    admin_password_hash: string;
+    admin_password_salt: string;
+  }[]>`
+    SELECT admin_username, admin_password_hash, admin_password_salt
+    FROM settings WHERE id = 1
+  `;
+  const inherited = fromSettings[0];
+  const now = new Date().toISOString();
+
+  if (inherited?.admin_password_hash && inherited.admin_password_salt) {
+    const username = inherited.admin_username || "admin";
+    await db`
+      INSERT INTO admins (username, username_key, password_hash, password_salt, created_at, updated_at)
+      VALUES (
+        ${username},
+        ${username.trim().toLowerCase()},
+        ${inherited.admin_password_hash},
+        ${inherited.admin_password_salt},
+        ${now},
+        ${now}
+      )
+    `;
+    return;
+  }
+
+  const username = process.env.ADMIN_USERNAME || "admin";
+  const password = process.env.ADMIN_PASSWORD || "lockwatch";
+  const salt = randomBytes(16).toString("hex");
+  await db`
+    INSERT INTO admins (username, username_key, password_hash, password_salt, created_at, updated_at)
+    VALUES (
+      ${username},
+      ${username.trim().toLowerCase()},
+      ${hashPassword(password, salt)},
+      ${salt},
+      ${now},
+      ${now}
+    )
+  `;
 }
 
 export function hashAdminPassword(password: string, salt: string) {

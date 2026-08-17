@@ -29,10 +29,12 @@ function iso(value: unknown) {
 function nestedUser(source: Record<string, unknown> | null) {
   const direct = asRecord(pick(source, ["user", "accessed_by", "accessedBy", "actor", "member", "person"]));
   const nestedData = asRecord(source?.data);
+  const nestedObject = asRecord(source?.object);
   const open = asRecord(source?.open);
   return (
     direct ||
     asRecord(open?.user) ||
+    asRecord(nestedObject?.user) ||
     asRecord(pick(nestedData, ["user", "accessed_by", "accessedBy", "actor"]))
   );
 }
@@ -40,21 +42,43 @@ function nestedUser(source: Record<string, unknown> | null) {
 function nestedLock(source: Record<string, unknown> | null) {
   const direct = asRecord(pick(source, ["lock", "access_point", "accessPoint"]));
   const nestedData = asRecord(source?.data);
-  return direct || asRecord(pick(nestedData, ["lock", "access_point", "accessPoint"]));
+  const nestedObject = asRecord(source?.object);
+  if (direct) return direct;
+  if (nestedObject && (nestedObject.name || nestedObject.hardware_id || nestedObject.lock_type_id != null)) {
+    return nestedObject;
+  }
+  return asRecord(pick(nestedData, ["lock", "access_point", "accessPoint"]));
+}
+
+function sera4EventObject(root: Record<string, unknown> | null) {
+  if (!root) return null;
+  const object = asRecord(root.object);
+  if (!object) return null;
+  const action = str(root.action)?.toLowerCase() || "";
+  if (
+    action.includes("lock_event") ||
+    object.lock_event_id != null ||
+    object.hardware_id != null ||
+    (object.event != null && object.user)
+  ) {
+    return object;
+  }
+  return null;
 }
 
 export function inferAction(source: Record<string, unknown> | null): AccessAction {
   if (!source) return "unknown";
-  const raw = str(
-    pick(source, ["action", "event", "event_type", "eventType", "type", "status", "state", "kind"]),
-  )?.toLowerCase();
+  if (source.opened_via != null && source.opened_via !== "") return "open";
+  if (source.event === 0 || source.event === "0") return "open";
+  if (source.event === 1 || source.event === "1") return "close";
   const openFlag = pick(source, ["opened", "is_open", "isOpen", "unlocked"]);
   if (openFlag === true) return "open";
   if (openFlag === false) return "close";
   if (typeof source.open === "boolean") return source.open ? "open" : "close";
-  if (!raw) return "unknown";
-  if (/(open|unlock|enter|access_granted|opened)/.test(raw)) return "open";
-  if (/(close|lock|locked|secured|closed)/.test(raw)) return "close";
+  const raw = str(pick(source, ["action", "event_type", "eventType", "type", "status", "state", "kind"]))?.toLowerCase();
+  if (!raw || raw.includes("lock_event")) return "unknown";
+  if (/\b(open|unlock|enter|access_granted|opened)\b/.test(raw)) return "open";
+  if (/\b(close|closed|locked|secured)\b/.test(raw)) return "close";
   return "unknown";
 }
 
@@ -103,9 +127,10 @@ export function flattenAccessRecord(record: unknown): unknown[] {
 export function parseLockEvent(payload: unknown): ParsedLockEvent | null {
   const root = asRecord(payload);
   if (!root) return null;
-  const data = asRecord(root.data) || root;
-  const user = nestedUser(root) || nestedUser(data);
-  const lock = nestedLock(root) || nestedLock(data);
+  const eventObject = sera4EventObject(root);
+  const data = eventObject || asRecord(root.data) || root;
+  const user = nestedUser(data) || nestedUser(root);
+  const lock = nestedLock(data) || nestedLock(root);
   const open = asRecord(data.open) || asRecord(root.open);
   const closed = asRecord(data.closed) || asRecord(root.closed);
 
@@ -134,7 +159,10 @@ export function parseLockEvent(payload: unknown): ParsedLockEvent | null {
     (action === "close" ? iso(closed?.timestamp) : iso(open?.timestamp)) ||
     new Date().toISOString();
 
-  const lockId = str(pick(lock, ["id", "lock_id", "lockId"])) || str(pick(data, ["lock_id", "lockId", "id"]));
+  const lockId =
+    str(pick(lock, ["id", "lock_id", "lockId"])) ||
+    str(pick(data, ["lock_id", "lockId", "id"])) ||
+    str(pick(root, ["lock_id", "lockId"]));
   const userId =
     str(pick(user, ["membership_id", "membershipId", "id", "user_id", "userId", "uuid"])) ||
     str(pick(data, ["user_id", "userId", "membership_id"]));
@@ -143,19 +171,23 @@ export function parseLockEvent(payload: unknown): ParsedLockEvent | null {
     [str(pick(user, ["first_name", "firstName"])), str(pick(user, ["last_name", "lastName"]))]
       .filter(Boolean)
       .join(" ") ||
+    str(pick(user, ["username"])) ||
     null;
-  const userEmail = str(pick(user, ["email", "username", "login"]));
+  const userEmail = str(pick(user, ["email"]));
 
   return {
     lockId,
-    lockName: str(pick(lock, ["name", "label", "hardware_id", "hardwareId", "description"])),
+    lockName:
+      str(pick(lock, ["name", "label", "description"])) ||
+      str(pick(data, ["name"])) ||
+      str(pick(lock, ["hardware_id", "hardwareId"])),
     userId,
     userName,
     userEmail,
     action,
     occurredAt,
     externalId:
-      str(pick(data, ["event_id", "eventId", "access_id", "accessId", "uuid"])) ||
+      str(pick(data, ["lock_event_id", "lockEventId", "event_id", "eventId", "access_id", "accessId", "uuid"])) ||
       str(pick(root, ["event_id", "eventId", "uuid"])) ||
       (lockId && action !== "unknown" ? `${lockId}:${action}:${occurredAt}:${userId || "unknown"}` : null),
     open: action === "open" ? true : action === "close" ? false : null,
@@ -166,6 +198,8 @@ export function extractHistoryRecords(payload: unknown): unknown[] {
   if (Array.isArray(payload)) return payload.flatMap(flattenAccessRecord);
   const root = asRecord(payload);
   if (!root) return [];
+  const eventObject = sera4EventObject(root);
+  if (eventObject) return [eventObject];
   const candidates = [
     root.data,
     root.accesses,

@@ -1,4 +1,4 @@
-import { ensureDb, hashAdminPassword, newSalt } from "./db";
+import { ensureDb } from "./db";
 import type { Settings } from "./types";
 
 type SettingsRow = {
@@ -44,7 +44,6 @@ function mapSettings(row: SettingsRow): Settings {
     windowMinutes: Number(row.window_minutes),
     alertOnDaily: Boolean(row.alert_on_daily),
     timezone: row.timezone,
-    adminUsername: row.admin_username,
   };
 }
 
@@ -59,24 +58,13 @@ export async function getSettings(): Promise<Settings> {
   return mapSettings(await settingsRow());
 }
 
-export async function getAuthSecrets() {
-  const sql = await ensureDb();
-  const rows = await sql<{
-    admin_username: string;
-    admin_password_hash: string;
-    admin_password_salt: string;
-    session_secret: string;
-  }[]>`SELECT admin_username, admin_password_hash, admin_password_salt, session_secret FROM settings WHERE id = 1`;
-  if (!rows[0]) throw new Error("Settings row is missing");
-  return rows[0];
-}
-
 export function webhookUrl(settings: Settings) {
-  const base = (settings.publicAppUrl || process.env.APP_PUBLIC_URL || "http://localhost:3000").replace(/\/$/, "");
-  return `${base}/api/webhooks/lock-status?token=${settings.webhookToken}`;
+  const vercel = process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "";
+  const base = (settings.publicAppUrl || process.env.APP_PUBLIC_URL || vercel || "http://localhost:3000").replace(/\/$/, "");
+  return `${base}/api/webhooks/lock-status/${settings.webhookToken}`;
 }
 
-export type SettingsPatch = Partial<Settings> & { adminPassword?: string };
+export type SettingsPatch = Partial<Settings>;
 
 export async function updateSettings(patch: SettingsPatch) {
   const current = await settingsRow();
@@ -98,15 +86,7 @@ export async function updateSettings(patch: SettingsPatch) {
     window_minutes: patch.windowMinutes ?? current.window_minutes,
     alert_on_daily: patch.alertOnDaily === undefined ? current.alert_on_daily : patch.alertOnDaily,
     timezone: patch.timezone ?? current.timezone,
-    admin_username: patch.adminUsername ?? current.admin_username,
-    admin_password_hash: current.admin_password_hash,
-    admin_password_salt: current.admin_password_salt,
   };
-
-  if (patch.adminPassword && patch.adminPassword.trim()) {
-    next.admin_password_salt = newSalt();
-    next.admin_password_hash = hashAdminPassword(patch.adminPassword, next.admin_password_salt);
-  }
 
   const sql = await ensureDb();
   await sql`
@@ -128,9 +108,6 @@ export async function updateSettings(patch: SettingsPatch) {
       window_minutes = ${next.window_minutes},
       alert_on_daily = ${next.alert_on_daily},
       timezone = ${next.timezone},
-      admin_username = ${next.admin_username},
-      admin_password_hash = ${next.admin_password_hash},
-      admin_password_salt = ${next.admin_password_salt},
       updated_at = ${new Date().toISOString()}
     WHERE id = 1
   `;
