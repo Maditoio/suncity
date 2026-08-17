@@ -193,6 +193,35 @@ async function repairWebhookEvents(db: postgres.Sql) {
       WHERE id = ${row.id}
     `;
   }
+
+  const closes = await db<{ id: number; lock_id: string | null; hardware_id: string | null; occurred_at: string }[]>`
+    SELECT id, lock_id, hardware_id, occurred_at FROM access_events
+    WHERE action = 'close'
+      AND user_id IS NULL AND user_name IS NULL AND user_email IS NULL
+  `;
+  for (const row of closes) {
+    const prev = await db<{ user_id: string | null; user_name: string | null; user_email: string | null }[]>`
+      SELECT user_id, user_name, user_email FROM access_events
+      WHERE action = 'open'
+        AND (user_id IS NOT NULL OR user_email IS NOT NULL OR user_name IS NOT NULL)
+        AND occurred_at <= ${row.occurred_at}
+        AND (
+          ${row.lock_id || ""} = ''
+          OR lock_id = ${row.lock_id}
+          OR hardware_id = ${row.hardware_id}
+        )
+      ORDER BY occurred_at DESC, id DESC
+      LIMIT 1
+    `;
+    if (!prev[0]) continue;
+    await db`
+      UPDATE access_events SET
+        user_id = ${prev[0].user_id},
+        user_name = ${prev[0].user_name},
+        user_email = ${prev[0].user_email}
+      WHERE id = ${row.id}
+    `;
+  }
 }
 
 async function seedAdmin(db: postgres.Sql) {

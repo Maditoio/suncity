@@ -43,12 +43,40 @@ function mapEvent(row: EventRow): AccessEvent {
   };
 }
 
+async function withLastOpener(parsed: ParsedLockEvent): Promise<ParsedLockEvent> {
+  if (parsed.action !== "close") return parsed;
+  if (parsed.userId || parsed.userEmail || parsed.userName) return parsed;
+  const sql = await ensureDb();
+  const rows = await sql<{ user_id: string | null; user_name: string | null; user_email: string | null }[]>`
+    SELECT user_id, user_name, user_email FROM access_events
+    WHERE action = 'open'
+      AND (user_id IS NOT NULL OR user_email IS NOT NULL OR user_name IS NOT NULL)
+      AND occurred_at <= ${parsed.occurredAt}
+      AND (
+        ${parsed.lockId || ""} = ''
+        OR lock_id = ${parsed.lockId}
+        OR hardware_id = ${parsed.hardwareId}
+      )
+    ORDER BY occurred_at DESC, id DESC
+    LIMIT 1
+  `;
+  const row = rows[0];
+  if (!row) return parsed;
+  return {
+    ...parsed,
+    userId: row.user_id,
+    userName: row.user_name,
+    userEmail: row.user_email,
+  };
+}
+
 export async function insertAccessEvent(input: {
   source: "webhook" | "api";
   parsed: ParsedLockEvent;
   raw: unknown;
 }) {
   const sql = await ensureDb();
+  const parsed = await withLastOpener(input.parsed);
   const createdAt = new Date().toISOString();
   try {
     const rows = await sql<{ id: number }[]>`
@@ -57,19 +85,19 @@ export async function insertAccessEvent(input: {
         action, occurred_at, raw_json, created_at, external_id, key_id, site_name, hardware_id
       ) VALUES (
         ${input.source},
-        ${input.parsed.lockId},
-        ${input.parsed.lockName},
-        ${input.parsed.userId},
-        ${input.parsed.userName},
-        ${input.parsed.userEmail},
-        ${input.parsed.action},
-        ${input.parsed.occurredAt},
+        ${parsed.lockId},
+        ${parsed.lockName},
+        ${parsed.userId},
+        ${parsed.userName},
+        ${parsed.userEmail},
+        ${parsed.action},
+        ${parsed.occurredAt},
         ${JSON.stringify(input.raw)},
         ${createdAt},
-        ${input.parsed.externalId},
-        ${input.parsed.keyId},
-        ${input.parsed.siteName},
-        ${input.parsed.hardwareId}
+        ${parsed.externalId},
+        ${parsed.keyId},
+        ${parsed.siteName},
+        ${parsed.hardwareId}
       )
       RETURNING id
     `;
