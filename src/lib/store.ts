@@ -1,6 +1,7 @@
 import { ensureDb } from "./db";
 import { dayBounds, userKey } from "./format";
 import { parseLockEvent } from "./parse";
+import { revokeKey } from "./sera4";
 import { getSettings } from "./settings";
 import type { AccessEvent, AlertRow, ParsedLockEvent, UserDayStat, WebhookLog } from "./types";
 
@@ -17,6 +18,9 @@ type EventRow = {
   raw_json: string;
   created_at: string;
   external_id: string | null;
+  key_id: string | null;
+  site_name: string | null;
+  hardware_id: string | null;
 };
 
 function mapEvent(row: EventRow): AccessEvent {
@@ -33,6 +37,9 @@ function mapEvent(row: EventRow): AccessEvent {
     rawJson: row.raw_json,
     createdAt: row.created_at,
     externalId: row.external_id,
+    keyId: row.key_id,
+    siteName: row.site_name,
+    hardwareId: row.hardware_id,
   };
 }
 
@@ -47,7 +54,7 @@ export async function insertAccessEvent(input: {
     const rows = await sql<{ id: number }[]>`
       INSERT INTO access_events (
         source, lock_id, lock_name, user_id, user_name, user_email,
-        action, occurred_at, raw_json, created_at, external_id
+        action, occurred_at, raw_json, created_at, external_id, key_id, site_name, hardware_id
       ) VALUES (
         ${input.source},
         ${input.parsed.lockId},
@@ -59,7 +66,10 @@ export async function insertAccessEvent(input: {
         ${input.parsed.occurredAt},
         ${JSON.stringify(input.raw)},
         ${createdAt},
-        ${input.parsed.externalId}
+        ${input.parsed.externalId},
+        ${input.parsed.keyId},
+        ${input.parsed.siteName},
+        ${input.parsed.hardwareId}
       )
       RETURNING id
     `;
@@ -208,7 +218,7 @@ export async function evaluateAlerts(parsed: ParsedLockEvent) {
     SELECT COUNT(*)::int as n FROM access_events
     WHERE action = 'open'
       AND occurred_at >= ${windowStart} AND occurred_at <= ${parsed.occurredAt}
-      AND COALESCE(user_id, user_email, user_name, 'unknown') = ${key}
+      AND COALESCE(lower(user_email), user_id, user_name, 'unknown') = ${key}
   `;
   const burstCount = Number(burstRows[0]?.n || 0);
 
@@ -216,7 +226,7 @@ export async function evaluateAlerts(parsed: ParsedLockEvent) {
     const recent = await sql<{ id: number }[]>`
       SELECT id FROM alerts
       WHERE kind = 'burst'
-        AND COALESCE(user_id, user_email, user_name, 'unknown') = ${key}
+        AND COALESCE(lower(user_email), user_id, user_name, 'unknown') = ${key}
         AND occurred_at >= ${windowStart}
       ORDER BY id DESC LIMIT 1
     `;
@@ -228,7 +238,7 @@ export async function evaluateAlerts(parsed: ParsedLockEvent) {
           openCount: burstCount,
           windowMinutes: settings.windowMinutes,
           threshold: settings.maxUsers,
-          message: `${displayLabel(parsed)} opened the lock ${burstCount} times in ${settings.windowMinutes} minutes (limit ${settings.maxUsers}).`,
+          message: `${displayLabel(parsed)} opened ${parsed.lockName || "the lock"} ${burstCount} times in ${settings.windowMinutes} minutes (limit ${settings.maxUsers}).`,
         }),
       );
     }
@@ -240,14 +250,14 @@ export async function evaluateAlerts(parsed: ParsedLockEvent) {
       SELECT COUNT(*)::int as n FROM access_events
       WHERE action = 'open'
         AND occurred_at >= ${start} AND occurred_at <= ${parsed.occurredAt}
-        AND COALESCE(user_id, user_email, user_name, 'unknown') = ${key}
+        AND COALESCE(lower(user_email), user_id, user_name, 'unknown') = ${key}
     `;
     const dailyCount = Number(dailyRows[0]?.n || 0);
     if (dailyCount > settings.maxUsers) {
       const recent = await sql<{ id: number }[]>`
         SELECT id FROM alerts
         WHERE kind = 'daily'
-          AND COALESCE(user_id, user_email, user_name, 'unknown') = ${key}
+          AND COALESCE(lower(user_email), user_id, user_name, 'unknown') = ${key}
           AND occurred_at >= ${start}
       `;
       if (!recent[0]) {
@@ -258,18 +268,25 @@ export async function evaluateAlerts(parsed: ParsedLockEvent) {
             openCount: dailyCount,
             windowMinutes: 24 * 60,
             threshold: settings.maxUsers,
-            message: `${displayLabel(parsed)} opened the lock ${dailyCount} times today (limit ${settings.maxUsers}).`,
+            message: `${displayLabel(parsed)} opened ${parsed.lockName || "the lock"} ${dailyCount} times today (limit ${settings.maxUsers}).`,
           }),
         );
       }
     }
   }
 
-  return created;
+  if (settings.autoRevokeOnAlert && parsed.keyId) {
+    for (const alert of created) {
+      await applyKeyRevoke(alert.id, parsed.keyId);
+    }
+  }
+
+  return created.length ? await listAlertsByIds(created.map((alert) => alert.id)) : [];
 }
 
 function displayLabel(parsed: ParsedLockEvent) {
-  return parsed.userName || parsed.userEmail || (parsed.userId ? `User ${parsed.userId}` : "Unknown user");
+  const who = parsed.userName || parsed.userEmail || (parsed.userId ? `User ${parsed.userId}` : "Unknown user");
+  return parsed.userEmail && parsed.userName ? `${parsed.userName} (${parsed.userEmail})` : who;
 }
 
 async function insertAlert(input: {
@@ -285,7 +302,7 @@ async function insertAlert(input: {
   const rows = await sql<{ id: number }[]>`
     INSERT INTO alerts (
       user_id, user_name, user_email, kind, open_count, window_minutes,
-      threshold, message, occurred_at, created_at
+      threshold, message, occurred_at, created_at, key_id
     ) VALUES (
       ${input.parsed.userId},
       ${input.parsed.userName},
@@ -296,7 +313,8 @@ async function insertAlert(input: {
       ${input.threshold},
       ${input.message},
       ${input.parsed.occurredAt},
-      ${createdAt}
+      ${createdAt},
+      ${input.parsed.keyId}
     )
     RETURNING id
   `;
@@ -313,26 +331,30 @@ async function insertAlert(input: {
     occurredAt: input.parsed.occurredAt,
     acknowledgedAt: null,
     createdAt,
+    keyId: input.parsed.keyId,
+    revokedAt: null,
+    revokeError: null,
   };
 }
 
-export async function listAlerts(limit = 100): Promise<AlertRow[]> {
-  const sql = await ensureDb();
-  const rows = await sql<{
-    id: number;
-    user_id: string | null;
-    user_name: string | null;
-    user_email: string | null;
-    kind: "burst" | "daily";
-    open_count: number;
-    window_minutes: number;
-    threshold: number;
-    message: string;
-    occurred_at: string;
-    acknowledged_at: string | null;
-    created_at: string;
-  }[]>`SELECT * FROM alerts ORDER BY occurred_at DESC, id DESC LIMIT ${limit}`;
-  return rows.map((row) => ({
+function mapAlert(row: {
+  id: number;
+  user_id: string | null;
+  user_name: string | null;
+  user_email: string | null;
+  kind: "burst" | "daily";
+  open_count: number;
+  window_minutes: number;
+  threshold: number;
+  message: string;
+  occurred_at: string;
+  acknowledged_at: string | null;
+  created_at: string;
+  key_id: string | null;
+  revoked_at: string | null;
+  revoke_error: string | null;
+}): AlertRow {
+  return {
     id: Number(row.id),
     userId: row.user_id,
     userName: row.user_name,
@@ -345,7 +367,73 @@ export async function listAlerts(limit = 100): Promise<AlertRow[]> {
     occurredAt: row.occurred_at,
     acknowledgedAt: row.acknowledged_at,
     createdAt: row.created_at,
-  }));
+    keyId: row.key_id,
+    revokedAt: row.revoked_at,
+    revokeError: row.revoke_error,
+  };
+}
+
+export async function listAlerts(limit = 100): Promise<AlertRow[]> {
+  const sql = await ensureDb();
+  const rows = await sql<Parameters<typeof mapAlert>[0][]>`SELECT * FROM alerts ORDER BY occurred_at DESC, id DESC LIMIT ${limit}`;
+  return rows.map(mapAlert);
+}
+
+async function listAlertsByIds(ids: number[]) {
+  if (!ids.length) return [];
+  const sql = await ensureDb();
+  const rows = await sql<Parameters<typeof mapAlert>[0][]>`SELECT * FROM alerts WHERE id IN ${sql(ids)}`;
+  return rows.map(mapAlert);
+}
+
+async function applyKeyRevoke(alertId: number, keyId: string) {
+  const sql = await ensureDb();
+  try {
+    const result = await revokeKey(keyId);
+    if (result.ok) {
+      await sql`
+        UPDATE alerts SET
+          revoked_at = ${new Date().toISOString()},
+          revoke_error = NULL,
+          message = message || ${` Sera4 key ${keyId} was revoked.`}
+        WHERE id = ${alertId} AND revoked_at IS NULL
+      `;
+      return { ok: true as const };
+    }
+    const error = `Sera4 returned ${result.status}`;
+    await sql`UPDATE alerts SET revoke_error = ${error} WHERE id = ${alertId}`;
+    return { ok: false as const, error };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Key revoke failed";
+    await sql`UPDATE alerts SET revoke_error = ${message} WHERE id = ${alertId}`;
+    return { ok: false as const, error: message };
+  }
+}
+
+export async function revokeAlertKey(alertId: number) {
+  const sql = await ensureDb();
+  const rows = await sql<{ id: number; key_id: string | null; revoked_at: string | null }[]>`
+    SELECT id, key_id, revoked_at FROM alerts WHERE id = ${alertId} LIMIT 1
+  `;
+  const alert = rows[0];
+  if (!alert) throw new Error("Alert not found");
+  if (alert.revoked_at) return { ok: true, already: true };
+  let keyId = alert.key_id;
+  if (!keyId) {
+    const events = await sql<{ key_id: string | null }[]>`
+      SELECT key_id FROM access_events
+      WHERE key_id IS NOT NULL
+        AND (
+          user_id = (SELECT user_id FROM alerts WHERE id = ${alertId})
+          OR user_email = (SELECT user_email FROM alerts WHERE id = ${alertId})
+        )
+      ORDER BY occurred_at DESC, id DESC
+      LIMIT 1
+    `;
+    keyId = events[0]?.key_id || null;
+  }
+  if (!keyId) throw new Error("No Sera4 key id is stored for this alert yet");
+  return applyKeyRevoke(alert.id, keyId);
 }
 
 export async function acknowledgeAlert(id: number) {

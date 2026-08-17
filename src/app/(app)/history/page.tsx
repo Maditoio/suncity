@@ -10,6 +10,8 @@ type EventRow = {
   source: string;
   lockId: string | null;
   lockName: string | null;
+  siteName: string | null;
+  hardwareId: string | null;
   userId: string | null;
   userName: string | null;
   userEmail: string | null;
@@ -73,7 +75,7 @@ export default function HistoryPage() {
   const filtered = useMemo(() => {
     const q = query.toLowerCase();
     return events.filter((event) =>
-      [event.userName, event.userEmail, event.userId, event.action, event.lockName]
+      [event.userName, event.userEmail, event.userId, event.action, event.lockName, event.siteName, event.hardwareId]
         .filter(Boolean)
         .join(" ")
         .toLowerCase()
@@ -121,8 +123,8 @@ export default function HistoryPage() {
               <tr>
                 <th>When</th>
                 <th>User</th>
+                <th>Access point</th>
                 <th>Action</th>
-                <th>Lock</th>
                 <th>Source</th>
               </tr>
             </thead>
@@ -132,12 +134,19 @@ export default function HistoryPage() {
                   <td className="whitespace-nowrap text-text-2">{new Date(event.occurredAt).toLocaleString()}</td>
                   <td>
                     <p className="font-medium">{event.userName || event.userEmail || event.userId || "Unknown"}</p>
-                    <p className="text-xs text-text-2">{event.userEmail || event.userId}</p>
+                    <p className="text-xs text-text-2">{event.userEmail || event.userId || "No email"}</p>
+                  </td>
+                  <td>
+                    <p className="font-medium">{event.lockName || event.lockId || "—"}</p>
+                    <p className="text-xs text-text-2">
+                      {[event.siteName, event.hardwareId ? `HW ${event.hardwareId}` : null, event.lockId ? `ID ${event.lockId}` : null]
+                        .filter(Boolean)
+                        .join(" · ") || "—"}
+                    </p>
                   </td>
                   <td>
                     <StatusPill open={event.action === "open" ? true : event.action === "close" ? false : null} />
                   </td>
-                  <td>{event.lockName || event.lockId || "—"}</td>
                   <td className="capitalize text-text-2">{event.source}</td>
                 </tr>
               ))}

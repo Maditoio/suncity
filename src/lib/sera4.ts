@@ -65,6 +65,33 @@ export async function sera4Get(path: string, query?: Record<string, string | und
   return { ok: response.ok, status: response.status, url, json, text };
 }
 
+export async function sera4Send(method: string, path: string, body?: unknown) {
+  const settings = await getSettings();
+  if (!settings.twsHost) {
+    throw new Error("TwsHost is not set");
+  }
+  const url = sera4Url(settings, path);
+  const response = await fetch(url, {
+    method,
+    headers: sera4Headers(settings, body === undefined ? undefined : { "Content-Type": "application/json" }),
+    body: body === undefined ? undefined : JSON.stringify(body),
+    cache: "no-store",
+  });
+  const text = await response.text();
+  let json: unknown = null;
+  try {
+    json = text ? JSON.parse(text) : null;
+  } catch {
+    json = { raw: text };
+  }
+  return { ok: response.ok, status: response.status, url, json, text };
+}
+
+export async function revokeKey(keyId: string) {
+  if (!keyId) throw new Error("Key id is missing");
+  return sera4Send("DELETE", `/keys/${encodeURIComponent(keyId)}`);
+}
+
 export async function fetchLockStatus() {
   const settings = await getSettings();
   if (!settings.lockId) throw new Error("Lock ID is not set");

@@ -18,6 +18,7 @@ export type Settings = {
   windowMinutes: number;
   alertOnDaily: boolean;
   timezone: string;
+  autoRevokeOnAlert: boolean;
 };
 
 export type AccessEvent = {
@@ -33,6 +34,9 @@ export type AccessEvent = {
   rawJson: string;
   createdAt: string;
   externalId: string | null;
+  keyId: string | null;
+  siteName: string | null;
+  hardwareId: string | null;
 };
 
 export type AlertRow = {
@@ -48,6 +52,9 @@ export type AlertRow = {
   occurredAt: string;
   acknowledgedAt: string | null;
   createdAt: string;
+  keyId: string | null;
+  revokedAt: string | null;
+  revokeError: string | null;
 };
 
 export type WebhookLog = {
@@ -79,4 +86,7 @@ export type ParsedLockEvent = {
   occurredAt: string;
   externalId: string | null;
   open: boolean | null;
+  keyId: string | null;
+  siteName: string | null;
+  hardwareId: string | null;
 };

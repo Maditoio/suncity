@@ -19,6 +19,7 @@ type SettingsRow = {
   window_minutes: number;
   alert_on_daily: boolean;
   timezone: string;
+  auto_revoke_on_alert?: boolean;
   admin_username: string;
   admin_password_hash: string;
   admin_password_salt: string;
@@ -44,6 +45,7 @@ function mapSettings(row: SettingsRow): Settings {
     windowMinutes: Number(row.window_minutes),
     alertOnDaily: Boolean(row.alert_on_daily),
     timezone: row.timezone,
+    autoRevokeOnAlert: Boolean(row.auto_revoke_on_alert),
   };
 }
 
@@ -86,6 +88,7 @@ export async function updateSettings(patch: SettingsPatch) {
     window_minutes: patch.windowMinutes ?? current.window_minutes,
     alert_on_daily: patch.alertOnDaily === undefined ? current.alert_on_daily : patch.alertOnDaily,
     timezone: patch.timezone ?? current.timezone,
+    auto_revoke_on_alert: patch.autoRevokeOnAlert === undefined ? Boolean(current.auto_revoke_on_alert) : patch.autoRevokeOnAlert,
   };
 
   const sql = await ensureDb();
@@ -108,6 +111,7 @@ export async function updateSettings(patch: SettingsPatch) {
       window_minutes = ${next.window_minutes},
       alert_on_daily = ${next.alert_on_daily},
       timezone = ${next.timezone},
+      auto_revoke_on_alert = ${next.auto_revoke_on_alert},
       updated_at = ${new Date().toISOString()}
     WHERE id = 1
   `;

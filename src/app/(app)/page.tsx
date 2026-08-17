@@ -39,6 +39,8 @@ type Dashboard = {
     userName: string | null;
     userEmail: string | null;
     userId: string | null;
+    lockName: string | null;
+    siteName: string | null;
     occurredAt: string;
     source: string;
   }[];
@@ -207,6 +209,7 @@ export default function OverviewPage() {
                 <tr>
                   <th>When</th>
                   <th>User</th>
+                  <th>Access point</th>
                   <th>Action</th>
                   <th>Source</th>
                 </tr>
@@ -215,7 +218,14 @@ export default function OverviewPage() {
                 {data.events.map((event) => (
                   <tr key={event.id}>
                     <td className="whitespace-nowrap text-text-2">{new Date(event.occurredAt).toLocaleString()}</td>
-                    <td>{nameOf(event)}</td>
+                    <td>
+                      <p className="font-medium">{nameOf(event)}</p>
+                      {event.userEmail ? <p className="text-xs text-text-2">{event.userEmail}</p> : null}
+                    </td>
+                    <td>
+                      <p>{event.lockName || "—"}</p>
+                      {event.siteName ? <p className="text-xs text-text-2">{event.siteName}</p> : null}
+                    </td>
                     <td className="capitalize">{event.action}</td>
                     <td className="capitalize text-text-2">{event.source}</td>
                   </tr>

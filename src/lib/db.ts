@@ -1,5 +1,6 @@
 import { randomBytes, scryptSync } from "node:crypto";
 import postgres from "postgres";
+import { parseLockEvent } from "./parse";
 
 let sql: postgres.Sql | null = null;
 let ready: Promise<void> | null = null;
@@ -131,6 +132,14 @@ async function migrate() {
     )
   `;
 
+  await db`ALTER TABLE settings ADD COLUMN IF NOT EXISTS auto_revoke_on_alert BOOLEAN NOT NULL DEFAULT FALSE`;
+  await db`ALTER TABLE access_events ADD COLUMN IF NOT EXISTS key_id TEXT`;
+  await db`ALTER TABLE access_events ADD COLUMN IF NOT EXISTS site_name TEXT`;
+  await db`ALTER TABLE access_events ADD COLUMN IF NOT EXISTS hardware_id TEXT`;
+  await db`ALTER TABLE alerts ADD COLUMN IF NOT EXISTS key_id TEXT`;
+  await db`ALTER TABLE alerts ADD COLUMN IF NOT EXISTS revoked_at TEXT`;
+  await db`ALTER TABLE alerts ADD COLUMN IF NOT EXISTS revoke_error TEXT`;
+
   const existing = await db`SELECT id FROM settings WHERE id = 1`;
   if (existing.length === 0) {
     await db`
@@ -146,6 +155,43 @@ async function migrate() {
   }
 
   await seedAdmin(db);
+  await repairWebhookEvents(db);
+}
+
+async function repairWebhookEvents(db: postgres.Sql) {
+  const rows = await db<{ id: number; raw_json: string }[]>`
+    SELECT id, raw_json FROM access_events
+    WHERE source = 'webhook'
+      AND (
+        user_name IS NULL OR user_email IS NULL OR lock_name IS NULL OR key_id IS NULL
+        OR action = 'unknown'
+      )
+  `;
+  for (const row of rows) {
+    let payload: unknown = null;
+    try {
+      payload = JSON.parse(row.raw_json);
+    } catch {
+      continue;
+    }
+    const parsed = parseLockEvent(payload);
+    if (!parsed) continue;
+    await db`
+      UPDATE access_events SET
+        lock_id = ${parsed.lockId},
+        lock_name = ${parsed.lockName},
+        user_id = ${parsed.userId},
+        user_name = ${parsed.userName},
+        user_email = ${parsed.userEmail},
+        action = ${parsed.action},
+        occurred_at = ${parsed.occurredAt},
+        external_id = ${parsed.externalId},
+        key_id = ${parsed.keyId},
+        site_name = ${parsed.siteName},
+        hardware_id = ${parsed.hardwareId}
+      WHERE id = ${row.id}
+    `;
+  }
 }
 
 async function seedAdmin(db: postgres.Sql) {

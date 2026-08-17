@@ -3,7 +3,7 @@ export function userKey(input: {
   userEmail?: string | null;
   userName?: string | null;
 }) {
-  return input.userId || input.userEmail || input.userName || "unknown";
+  return input.userEmail?.toLowerCase() || input.userId || input.userName || "unknown";
 }
 
 export function displayName(input: {

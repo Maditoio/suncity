@@ -18,6 +18,9 @@ export async function POST(request: Request) {
     occurredAt: new Date().toISOString(),
     externalId: null,
     open: body.action !== "close",
+    keyId: null,
+    siteName: null,
+    hardwareId: null,
   };
   const raw = { simulated: true, ...parsed };
   await insertAccessEvent({

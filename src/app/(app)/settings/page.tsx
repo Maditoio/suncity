@@ -24,6 +24,7 @@ type Settings = {
   alertOnDaily: boolean;
   timezone: string;
   adminUsername: string;
+  autoRevokeOnAlert: boolean;
   hasTwsPass: boolean;
   hasTwsOrgToken: boolean;
   hasTwsUserToken: boolean;
@@ -48,6 +49,7 @@ const empty: Settings = {
   alertOnDaily: true,
   timezone: "Europe/Berlin",
   adminUsername: "admin",
+  autoRevokeOnAlert: false,
   hasTwsPass: false,
   hasTwsOrgToken: false,
   hasTwsUserToken: false,
@@ -161,6 +163,15 @@ export default function SettingsPage() {
             className="h-4 w-4 rounded border-line"
           />
           Also alert if the same user exceeds this count in a full day
+        </label>
+        <label className="mt-3 flex items-center gap-2 text-sm">
+          <input
+            type="checkbox"
+            checked={form.autoRevokeOnAlert}
+            onChange={(e) => set("autoRevokeOnAlert", e.target.checked)}
+            className="h-4 w-4 rounded border-line"
+          />
+          Automatically revoke the Sera4 key (DELETE /keys/:id) when an occupancy alert fires
         </label>
       </Card>
 

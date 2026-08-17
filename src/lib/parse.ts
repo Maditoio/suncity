@@ -54,16 +54,17 @@ function sera4EventObject(root: Record<string, unknown> | null) {
   if (!root) return null;
   const object = asRecord(root.object);
   if (!object) return null;
-  const action = str(root.action)?.toLowerCase() || "";
-  if (
-    action.includes("lock_event") ||
-    object.lock_event_id != null ||
-    object.hardware_id != null ||
-    (object.event != null && object.user)
-  ) {
-    return object;
-  }
+  if (typeof root.action === "string") return object;
+  if (object.user || object.lock_event_id != null || object.hardware_id != null || object.key) return object;
   return null;
+}
+
+function inferEnvelopeAction(source: Record<string, unknown> | null): AccessAction {
+  const raw = str(source?.action)?.toLowerCase() || "";
+  if (!raw || raw.includes("lock_event")) return "unknown";
+  if (raw.includes(".close") || raw.endsWith("close")) return "close";
+  if (raw.includes(".open") || raw.endsWith("open")) return "open";
+  return "unknown";
 }
 
 export function inferAction(source: Record<string, unknown> | null): AccessAction {
@@ -75,6 +76,8 @@ export function inferAction(source: Record<string, unknown> | null): AccessActio
   if (openFlag === true) return "open";
   if (openFlag === false) return "close";
   if (typeof source.open === "boolean") return source.open ? "open" : "close";
+  const envelope = inferEnvelopeAction(source);
+  if (envelope !== "unknown") return envelope;
   const raw = str(pick(source, ["action", "event_type", "eventType", "type", "status", "state", "kind"]))?.toLowerCase();
   if (!raw || raw.includes("lock_event")) return "unknown";
   if (/\b(open|unlock|enter|access_granted|opened)\b/.test(raw)) return "open";
@@ -134,7 +137,9 @@ export function parseLockEvent(payload: unknown): ParsedLockEvent | null {
   const open = asRecord(data.open) || asRecord(root.open);
   const closed = asRecord(data.closed) || asRecord(root.closed);
 
-  let action = inferAction(data) !== "unknown" ? inferAction(data) : inferAction(root);
+  let action = inferAction(data);
+  if (action === "unknown") action = inferAction(root);
+  if (action === "unknown") action = inferEnvelopeAction(root);
   if (action === "unknown" && open?.timestamp) action = "open";
   if (action === "unknown" && closed?.timestamp && !open?.timestamp) action = "close";
 
@@ -174,13 +179,25 @@ export function parseLockEvent(payload: unknown): ParsedLockEvent | null {
     str(pick(user, ["username"])) ||
     null;
   const userEmail = str(pick(user, ["email"]));
+  const key = asRecord(pick(data, ["key"])) || asRecord(pick(root, ["key"]));
+  const site = asRecord(pick(data, ["site"])) || asRecord(pick(lock, ["site"])) || asRecord(pick(root, ["site"]));
+  const hardwareId =
+    str(pick(data, ["hardware_id", "hardwareId"])) ||
+    str(pick(lock, ["hardware_id", "hardwareId"])) ||
+    str(pick(root, ["hardware_id", "hardwareId"]));
+  const keyId =
+    str(pick(key, ["id", "key_id", "keyId"])) ||
+    str(pick(data, ["key_id", "keyId"])) ||
+    str(pick(root, ["key_id", "keyId"]));
+  const siteName = str(pick(site, ["name", "label"])) || null;
 
   return {
     lockId,
     lockName:
       str(pick(lock, ["name", "label", "description"])) ||
       str(pick(data, ["name"])) ||
-      str(pick(lock, ["hardware_id", "hardwareId"])),
+      str(pick(root, ["name"])) ||
+      hardwareId,
     userId,
     userName,
     userEmail,
@@ -189,8 +206,11 @@ export function parseLockEvent(payload: unknown): ParsedLockEvent | null {
     externalId:
       str(pick(data, ["lock_event_id", "lockEventId", "event_id", "eventId", "access_id", "accessId", "uuid"])) ||
       str(pick(root, ["event_id", "eventId", "uuid"])) ||
-      (lockId && action !== "unknown" ? `${lockId}:${action}:${occurredAt}:${userId || "unknown"}` : null),
+      (lockId && action !== "unknown" ? `${lockId}:${action}:${occurredAt}:${userId || userEmail || "unknown"}` : null),
     open: action === "open" ? true : action === "close" ? false : null,
+    keyId,
+    siteName,
+    hardwareId,
   };
 }
 

@@ -16,6 +16,9 @@ type AlertRow = {
   message: string;
   occurredAt: string;
   acknowledgedAt: string | null;
+  keyId: string | null;
+  revokedAt: string | null;
+  revokeError: string | null;
 };
 
 export default function AlertsPage() {
@@ -32,6 +35,15 @@ export default function AlertsPage() {
   useEffect(() => {
     void load();
   }, []);
+
+  async function revoke(id: number) {
+    await fetch("/api/alerts", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ id, revoke: true }),
+    });
+    await load();
+  }
 
   async function ack(id: number) {
     await fetch("/api/alerts", {
@@ -66,10 +78,18 @@ export default function AlertsPage() {
               <p className="text-sm text-text-2">{new Date(alert.occurredAt).toLocaleString()}</p>
             </div>
             <p className="mt-3 text-[15px] leading-6">{alert.message}</p>
+            {alert.userEmail ? <p className="mt-1 text-sm text-text-2">{alert.userEmail}</p> : null}
+            {alert.revokedAt ? <p className="mt-1 text-sm text-primary">Sera4 key revoked</p> : null}
+            {alert.revokeError ? <p className="mt-1 text-sm text-danger">{alert.revokeError}</p> : null}
             <p className="mt-1 text-right text-sm font-semibold tabular-nums text-text-2">{alert.openCount} opens</p>
-            <Button onClick={() => ack(alert.id)} className="mt-4">
-              Acknowledge
-            </Button>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <Button onClick={() => ack(alert.id)}>Acknowledge</Button>
+              {!alert.revokedAt ? (
+                <Button variant="danger" onClick={() => revoke(alert.id)}>
+                  Revoke Sera4 key
+                </Button>
+              ) : null}
+            </div>
           </article>
         ))}
       </section>
