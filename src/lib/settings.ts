@@ -26,6 +26,12 @@ type SettingsRow = {
   session_secret: string;
 };
 
+function asBool(value: unknown) {
+  if (value === true || value === 1 || value === "t" || value === "true") return true;
+  if (value === false || value === 0 || value === "f" || value === "false" || value == null) return false;
+  return Boolean(value);
+}
+
 function mapSettings(row: SettingsRow): Settings {
   return {
     twsHost: row.tws_host,
@@ -43,9 +49,9 @@ function mapSettings(row: SettingsRow): Settings {
     webhookToken: row.webhook_token,
     maxUsers: Number(row.max_users),
     windowMinutes: Number(row.window_minutes),
-    alertOnDaily: Boolean(row.alert_on_daily),
+    alertOnDaily: asBool(row.alert_on_daily),
     timezone: row.timezone,
-    autoRevokeOnAlert: Boolean(row.auto_revoke_on_alert),
+    autoRevokeOnAlert: asBool(row.auto_revoke_on_alert),
   };
 }
 
@@ -86,9 +92,9 @@ export async function updateSettings(patch: SettingsPatch) {
     webhook_token: patch.webhookToken ?? current.webhook_token,
     max_users: patch.maxUsers ?? current.max_users,
     window_minutes: patch.windowMinutes ?? current.window_minutes,
-    alert_on_daily: patch.alertOnDaily === undefined ? current.alert_on_daily : patch.alertOnDaily,
+    alert_on_daily: patch.alertOnDaily === undefined ? asBool(current.alert_on_daily) : patch.alertOnDaily,
     timezone: patch.timezone ?? current.timezone,
-    auto_revoke_on_alert: patch.autoRevokeOnAlert === undefined ? Boolean(current.auto_revoke_on_alert) : patch.autoRevokeOnAlert,
+    auto_revoke_on_alert: patch.autoRevokeOnAlert === undefined ? asBool(current.auto_revoke_on_alert) : patch.autoRevokeOnAlert,
   };
 
   const sql = await ensureDb();

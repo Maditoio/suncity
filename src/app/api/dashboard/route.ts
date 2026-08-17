@@ -19,6 +19,7 @@ export async function GET() {
       windowMinutes: settings.windowMinutes,
       timezone: settings.timezone,
       configured: Boolean(settings.twsHost && settings.lockId && settings.twsUserToken),
+      autoRevokeOnAlert: settings.autoRevokeOnAlert,
     },
     webhookUrl: webhookUrl(settings),
     snapshot,

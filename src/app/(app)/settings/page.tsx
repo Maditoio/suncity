@@ -138,6 +138,25 @@ export default function SettingsPage() {
         <CopyField value={form.webhookUrl} />
       </Card>
 
+      <Card
+        title="Revoke key on limit violation"
+        description="When true, the user's Sera4 key is deleted automatically as soon as they exceed the open limit. When false, Lock Watch only records an alert."
+      >
+        <Field label="Automatically revoke Sera4 key">
+          <select
+            className="input"
+            value={form.autoRevokeOnAlert ? "true" : "false"}
+            onChange={(e) => set("autoRevokeOnAlert", e.target.value === "true")}
+          >
+            <option value="false">False — alert only, do not revoke</option>
+            <option value="true">True — delete the user's Sera4 key</option>
+          </select>
+        </Field>
+        <p className="mt-3 text-sm text-text-2">
+          Save after changing this. Keep TwsUser and TwsPass filled so an expired Bearer token can be refreshed before the key is deleted.
+        </p>
+      </Card>
+
       <Card title="Alert rules">
         <div className="grid gap-4 sm:grid-cols-3">
           <Field label="Max users including opener">
@@ -163,15 +182,6 @@ export default function SettingsPage() {
             className="h-4 w-4 rounded border-line"
           />
           Also alert if the same user exceeds this count in a full day
-        </label>
-        <label className="mt-3 flex items-center gap-2 text-sm">
-          <input
-            type="checkbox"
-            checked={form.autoRevokeOnAlert}
-            onChange={(e) => set("autoRevokeOnAlert", e.target.checked)}
-            className="h-4 w-4 rounded border-line"
-          />
-          Automatically revoke the Sera4 key (DELETE /keys/:id) when an occupancy alert fires
         </label>
       </Card>
 

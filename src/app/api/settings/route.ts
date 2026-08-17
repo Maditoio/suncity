@@ -62,7 +62,14 @@ export async function POST(request: Request) {
     windowMinutes: typeof body.windowMinutes === "number" ? body.windowMinutes : undefined,
     alertOnDaily: typeof body.alertOnDaily === "boolean" ? body.alertOnDaily : undefined,
     timezone: typeof body.timezone === "string" ? body.timezone : undefined,
-    autoRevokeOnAlert: typeof body.autoRevokeOnAlert === "boolean" ? body.autoRevokeOnAlert : undefined,
+    autoRevokeOnAlert:
+      typeof body.autoRevokeOnAlert === "boolean"
+        ? body.autoRevokeOnAlert
+        : body.autoRevokeOnAlert === "true"
+          ? true
+          : body.autoRevokeOnAlert === "false"
+            ? false
+            : undefined,
   });
 
   const nextUser = await getSessionUser();

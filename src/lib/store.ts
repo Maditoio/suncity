@@ -224,6 +224,7 @@ export async function evaluateAlerts(parsed: ParsedLockEvent) {
   const occurred = new Date(parsed.occurredAt);
   const windowStart = new Date(occurred.getTime() - settings.windowMinutes * 60 * 1000).toISOString();
   const created: AlertRow[] = [];
+  let violated = false;
 
   const burstRows = await sql<{ n: number }[]>`
     SELECT COUNT(*)::int as n FROM access_events
@@ -239,6 +240,7 @@ export async function evaluateAlerts(parsed: ParsedLockEvent) {
   const burstCount = Number(burstRows[0]?.n || 0);
 
   if (burstCount > settings.maxUsers) {
+    violated = true;
     const recent = await sql<{ id: number }[]>`
       SELECT id FROM alerts
       WHERE kind = 'burst'
@@ -275,6 +277,7 @@ export async function evaluateAlerts(parsed: ParsedLockEvent) {
     `;
     const dailyCount = Number(dailyRows[0]?.n || 0);
     if (dailyCount > settings.maxUsers) {
+      violated = true;
       const recent = await sql<{ id: number }[]>`
         SELECT id FROM alerts
         WHERE kind = 'daily'
@@ -296,13 +299,71 @@ export async function evaluateAlerts(parsed: ParsedLockEvent) {
     }
   }
 
-  if (settings.autoRevokeOnAlert && parsed.keyId) {
-    for (const alert of created) {
-      await applyKeyRevoke(alert.id, parsed.keyId);
-    }
+  if (settings.autoRevokeOnAlert && violated) {
+    await enforceKeyRevoke(parsed, created);
   }
 
   return created.length ? await listAlertsByIds(created.map((alert) => alert.id)) : [];
+}
+
+async function findLatestKeyId(parsed: ParsedLockEvent) {
+  if (parsed.keyId) return parsed.keyId;
+  const sql = await ensureDb();
+  const key = userKey(parsed);
+  const rows = await sql<{ key_id: string | null }[]>`
+    SELECT key_id FROM access_events
+    WHERE key_id IS NOT NULL
+      AND COALESCE(lower(user_email), user_id, user_name, 'unknown') = ${key}
+    ORDER BY occurred_at DESC, id DESC
+    LIMIT 1
+  `;
+  return rows[0]?.key_id || null;
+}
+
+async function latestUserAlert(key: string) {
+  const sql = await ensureDb();
+  const rows = await sql<Parameters<typeof mapAlert>[0][]>`
+    SELECT * FROM alerts
+    WHERE COALESCE(lower(user_email), user_id, user_name, 'unknown') = ${key}
+    ORDER BY id DESC
+    LIMIT 1
+  `;
+  return rows[0] ? mapAlert(rows[0]) : null;
+}
+
+async function enforceKeyRevoke(parsed: ParsedLockEvent, created: AlertRow[]) {
+  const keyId = await findLatestKeyId(parsed);
+  const existing = created[0] ?? (await latestUserAlert(userKey(parsed)));
+  const targets = created.length ? created : existing ? [existing] : [];
+  if (!targets.length) {
+    await logWebhook({
+      method: "REVOKE",
+      headers: {},
+      body: JSON.stringify({ userId: parsed.userId, userEmail: parsed.userEmail, keyId }),
+      parsedOk: false,
+      note: "Auto-revoke skipped: occupancy limit exceeded but no alert row was found",
+    });
+    return;
+  }
+  if (!keyId) {
+    const sql = await ensureDb();
+    const error = "No Sera4 key id found for this user";
+    for (const alert of targets) {
+      await sql`UPDATE alerts SET revoke_error = ${error} WHERE id = ${alert.id}`;
+    }
+    await logWebhook({
+      method: "REVOKE",
+      headers: {},
+      body: JSON.stringify({ alertId: targets[0].id, userId: parsed.userId, userEmail: parsed.userEmail }),
+      parsedOk: false,
+      note: `Auto-revoke skipped: ${error}`,
+    });
+    return;
+  }
+  for (const alert of targets) {
+    if (alert.revokedAt && keyId === alert.keyId) continue;
+    await applyKeyRevoke(alert.id, keyId);
+  }
 }
 
 function displayLabel(parsed: ParsedLockEvent) {
@@ -411,22 +472,41 @@ async function applyKeyRevoke(alertId: number, keyId: string) {
   const sql = await ensureDb();
   try {
     const result = await revokeKey(keyId);
-    if (result.ok) {
+    const gone = result.ok || result.status === 404;
+    await logWebhook({
+      method: "REVOKE",
+      headers: {},
+      body: JSON.stringify({ alertId, keyId, status: result.status, text: result.text.slice(0, 500) }),
+      parsedOk: gone,
+      note: gone ? `Revoked Sera4 key ${keyId}` : `Failed to revoke Sera4 key ${keyId}: ${result.status}`,
+    });
+    if (gone) {
       await sql`
         UPDATE alerts SET
+          key_id = ${keyId},
           revoked_at = ${new Date().toISOString()},
           revoke_error = NULL,
-          message = message || ${` Sera4 key ${keyId} was revoked.`}
-        WHERE id = ${alertId} AND revoked_at IS NULL
+          message = CASE
+            WHEN message LIKE ${`%Sera4 key ${keyId} was revoked.%`} THEN message
+            ELSE message || ${` Sera4 key ${keyId} was revoked.`}
+          END
+        WHERE id = ${alertId}
       `;
       return { ok: true as const };
     }
-    const error = `Sera4 returned ${result.status}`;
-    await sql`UPDATE alerts SET revoke_error = ${error} WHERE id = ${alertId}`;
+    const error = `Sera4 returned ${result.status}${result.text ? `: ${result.text.slice(0, 240)}` : ""}`;
+    await sql`UPDATE alerts SET key_id = ${keyId}, revoke_error = ${error} WHERE id = ${alertId}`;
     return { ok: false as const, error };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Key revoke failed";
-    await sql`UPDATE alerts SET revoke_error = ${message} WHERE id = ${alertId}`;
+    await logWebhook({
+      method: "REVOKE",
+      headers: {},
+      body: JSON.stringify({ alertId, keyId }),
+      parsedOk: false,
+      note: `Failed to revoke Sera4 key ${keyId}: ${message}`,
+    });
+    await sql`UPDATE alerts SET key_id = ${keyId}, revoke_error = ${message} WHERE id = ${alertId}`;
     return { ok: false as const, error: message };
   }
 }

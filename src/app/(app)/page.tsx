@@ -10,7 +10,7 @@ import { Button, Card, EmptyState, Field, Input, PageHeader, StatCard } from "@/
 type Dashboard = {
   webhookUrl: string;
   snapshot: { open: boolean; occurredAt: string; lockName: string | null; lockId: string | null } | null;
-  settings: { lockId: string; maxUsers: number; windowMinutes: number; timezone: string; configured: boolean };
+  settings: { lockId: string; maxUsers: number; windowMinutes: number; timezone: string; configured: boolean; autoRevokeOnAlert: boolean };
   today: {
     opens: number;
     uniqueUsers: number;
@@ -95,7 +95,7 @@ export default function OverviewPage() {
     <div className="space-y-6">
       <PageHeader
         title="Door occupancy"
-        description={`Alert when one person opens the lock more than ${data.settings.maxUsers} times in ${data.settings.windowMinutes} minutes.`}
+        description={`Alert when one person opens the lock more than ${data.settings.maxUsers} times in ${data.settings.windowMinutes} minutes.${data.settings.autoRevokeOnAlert ? " Over-limit keys are revoked automatically." : " Over-limit keys are not revoked until you turn that on in Settings."}`}
         actions={
           <>
             <Field label="From">

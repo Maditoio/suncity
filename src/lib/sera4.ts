@@ -89,7 +89,21 @@ export async function sera4Send(method: string, path: string, body?: unknown) {
 
 export async function revokeKey(keyId: string) {
   if (!keyId) throw new Error("Key id is missing");
-  return sera4Send("DELETE", `/keys/${encodeURIComponent(keyId)}`);
+  const path = `/keys/${encodeURIComponent(keyId)}`;
+  let result = await sera4Send("DELETE", path);
+  if (result.status === 401) {
+    try {
+      const signed = await signInForToken();
+      if (signed.token) {
+        const { updateSettings } = await import("./settings");
+        await updateSettings({ twsUserToken: signed.token });
+        result = await sera4Send("DELETE", path);
+      }
+    } catch {
+      // Keep the original 401 so the alert records why revoke failed.
+    }
+  }
+  return result;
 }
 
 export async function fetchLockStatus() {
