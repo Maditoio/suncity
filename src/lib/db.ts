@@ -1,6 +1,6 @@
 import { randomBytes, scryptSync } from "node:crypto";
 import postgres from "postgres";
-import { parseLockEvent } from "./parse";
+import { isMonitoredLock, parseLockEvent } from "./parse";
 
 let sql: postgres.Sql | null = null;
 let ready: Promise<void> | null = null;
@@ -159,13 +159,10 @@ async function migrate() {
 }
 
 async function repairWebhookEvents(db: postgres.Sql) {
+  const settingsRows = await db<{ lock_id: string }[]>`SELECT lock_id FROM settings WHERE id = 1`;
+  const monitoredLockId = settingsRows[0]?.lock_id || "";
   const rows = await db<{ id: number; raw_json: string }[]>`
-    SELECT id, raw_json FROM access_events
-    WHERE source = 'webhook'
-      AND (
-        user_name IS NULL OR user_email IS NULL OR lock_name IS NULL OR key_id IS NULL
-        OR action = 'unknown'
-      )
+    SELECT id, raw_json FROM access_events WHERE source = 'webhook'
   `;
   for (const row of rows) {
     let payload: unknown = null;
@@ -176,6 +173,10 @@ async function repairWebhookEvents(db: postgres.Sql) {
     }
     const parsed = parseLockEvent(payload);
     if (!parsed) continue;
+    if (monitoredLockId && !isMonitoredLock(parsed, monitoredLockId)) {
+      await db`DELETE FROM access_events WHERE id = ${row.id}`;
+      continue;
+    }
     await db`
       UPDATE access_events SET
         lock_id = ${parsed.lockId},

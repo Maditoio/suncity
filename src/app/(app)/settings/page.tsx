@@ -177,11 +177,11 @@ export default function SettingsPage() {
 
       <Card
         title="Sera4 API"
-        description="Same names as Postman. Requests already send Authorization, tws-organization-token, and tws-membershipId. Extra headers can stay {}."
+        description="Same names as Postman. Webhooks from other locks are ignored; only the Lock ID below is stored and alerted."
       >
         <div className="grid gap-4 sm:grid-cols-2">
           <TextField label="TwsHost" value={form.twsHost} onChange={(v) => set("twsHost", v)} placeholder="https://..." />
-          <TextField label="Lock ID" value={form.lockId} onChange={(v) => set("lockId", v)} />
+          <TextField label="Lock ID" value={form.lockId} onChange={(v) => set("lockId", v)} placeholder="Only this access point is stored" />
           <TextField label="TwsUser" value={form.twsUser} onChange={(v) => set("twsUser", v)} />
           <TextField
             label="TwsPass"

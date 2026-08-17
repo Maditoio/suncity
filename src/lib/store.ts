@@ -130,6 +130,11 @@ export async function todayStats(): Promise<UserDayStat[]> {
     SELECT user_id, user_name, user_email, COUNT(*)::int as open_count, MAX(occurred_at) as last_open_at
     FROM access_events
     WHERE action = 'open' AND occurred_at >= ${start} AND occurred_at < ${end}
+      AND (
+        ${settings.lockId} = ''
+        OR lock_id = ${settings.lockId}
+        OR lower(coalesce(hardware_id, '')) = ${settings.lockId.trim().toLowerCase()}
+      )
     GROUP BY COALESCE(user_id, ''), COALESCE(user_email, ''), COALESCE(user_name, ''), user_id, user_name, user_email
     ORDER BY open_count DESC, last_open_at DESC
   `;
@@ -144,10 +149,16 @@ export async function todayStats(): Promise<UserDayStat[]> {
 }
 
 export async function latestLockSnapshot() {
+  const settings = await getSettings();
   const sql = await ensureDb();
   const rows = await sql<{ action: string; occurred_at: string; lock_name: string | null; lock_id: string | null }[]>`
     SELECT action, occurred_at, lock_name, lock_id FROM access_events
     WHERE action IN ('open', 'close')
+      AND (
+        ${settings.lockId} = ''
+        OR lock_id = ${settings.lockId}
+        OR lower(coalesce(hardware_id, '')) = ${settings.lockId.trim().toLowerCase()}
+      )
     ORDER BY occurred_at DESC, id DESC
     LIMIT 1
   `;
@@ -219,6 +230,11 @@ export async function evaluateAlerts(parsed: ParsedLockEvent) {
     WHERE action = 'open'
       AND occurred_at >= ${windowStart} AND occurred_at <= ${parsed.occurredAt}
       AND COALESCE(lower(user_email), user_id, user_name, 'unknown') = ${key}
+      AND (
+        ${parsed.lockId || ""} = ''
+        OR lock_id = ${parsed.lockId}
+        OR hardware_id = ${parsed.hardwareId}
+      )
   `;
   const burstCount = Number(burstRows[0]?.n || 0);
 
@@ -251,6 +267,11 @@ export async function evaluateAlerts(parsed: ParsedLockEvent) {
       WHERE action = 'open'
         AND occurred_at >= ${start} AND occurred_at <= ${parsed.occurredAt}
         AND COALESCE(lower(user_email), user_id, user_name, 'unknown') = ${key}
+        AND (
+          ${parsed.lockId || ""} = ''
+          OR lock_id = ${parsed.lockId}
+          OR hardware_id = ${parsed.hardwareId}
+        )
     `;
     const dailyCount = Number(dailyRows[0]?.n || 0);
     if (dailyCount > settings.maxUsers) {

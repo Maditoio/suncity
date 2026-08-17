@@ -69,9 +69,8 @@ function inferEnvelopeAction(source: Record<string, unknown> | null): AccessActi
 
 export function inferAction(source: Record<string, unknown> | null): AccessAction {
   if (!source) return "unknown";
-  if (source.opened_via != null && source.opened_via !== "") return "open";
-  if (source.event === 0 || source.event === "0") return "open";
-  if (source.event === 1 || source.event === "1") return "close";
+  if (source.event === 0 || source.event === "0") return "close";
+  if (source.event === 1 || source.event === "1") return "open";
   const openFlag = pick(source, ["opened", "is_open", "isOpen", "unlocked"]);
   if (openFlag === true) return "open";
   if (openFlag === false) return "close";
@@ -83,6 +82,22 @@ export function inferAction(source: Record<string, unknown> | null): AccessActio
   if (/\b(open|unlock|enter|access_granted|opened)\b/.test(raw)) return "open";
   if (/\b(close|closed|locked|secured)\b/.test(raw)) return "close";
   return "unknown";
+}
+
+export function normalizeLockRef(value: string | null | undefined) {
+  return (value || "").trim().replace(/^0x/i, "").toLowerCase();
+}
+
+export function isMonitoredLock(
+  event: { lockId?: string | null; hardwareId?: string | null; lockName?: string | null },
+  monitoredLockId: string,
+) {
+  const wanted = normalizeLockRef(monitoredLockId);
+  if (!wanted) return false;
+  const candidates = [event.lockId, event.hardwareId].map(normalizeLockRef).filter(Boolean);
+  if (candidates.includes(wanted)) return true;
+  const name = normalizeLockRef(event.lockName);
+  return Boolean(name && (name === wanted || name.endsWith(`-${wanted}`) || name.endsWith(wanted)));
 }
 
 /** Split Sera4 access_history rows into separate open and close events. */

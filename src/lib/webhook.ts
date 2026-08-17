@@ -1,6 +1,6 @@
 import { timingSafeEqual } from "node:crypto";
 import { NextRequest, NextResponse } from "next/server";
-import { extractHistoryRecords, parseLockEvent } from "@/lib/parse";
+import { extractHistoryRecords, isMonitoredLock, parseLockEvent } from "@/lib/parse";
 import { getSettings } from "@/lib/settings";
 import { evaluateAlerts, insertAccessEvent, logWebhook } from "@/lib/store";
 
@@ -38,7 +38,8 @@ function tokenMatches(expected: string, provided: string) {
 
 export async function handleLockWebhook(request: NextRequest, pathToken?: string) {
   const raw = await request.text();
-  const expected = (await getSettings()).webhookToken;
+  const settings = await getSettings();
+  const expected = settings.webhookToken;
   const provided = providedToken(request, pathToken);
 
   if (!tokenMatches(expected, provided)) {
@@ -65,18 +66,24 @@ export async function handleLockWebhook(request: NextRequest, pathToken?: string
   const parsedEvents = (records.length ? records : [payload])
     .map((record) => ({ record, parsed: parseLockEvent(record) }))
     .filter((item): item is { record: unknown; parsed: NonNullable<ReturnType<typeof parseLockEvent>> } => Boolean(item.parsed));
+  const monitored = parsedEvents.filter((item) => isMonitoredLock(item.parsed, settings.lockId));
+  const ignored = parsedEvents.length - monitored.length;
 
   await logWebhook({
     method: request.method,
     headers: headersObject(request),
     body: raw || "{}",
     parsedOk: parsedEvents.length > 0,
-    note: parsedEvents.length
-      ? parsedEvents
-          .slice(0, 3)
-          .map((item) => `${item.parsed.action} by ${item.parsed.userName || item.parsed.userEmail || item.parsed.userId || "unknown"}`)
-          .join("; ")
-      : "Could not parse lock event",
+    note: !settings.lockId
+      ? "Ignored: set Lock ID in Settings so only that access point is stored"
+      : ignored && !monitored.length
+        ? `Ignored: event is for lock ${parsedEvents[0]?.parsed.lockId || parsedEvents[0]?.parsed.hardwareId || "unknown"}, monitoring ${settings.lockId}`
+        : monitored.length
+          ? monitored
+              .slice(0, 3)
+              .map((item) => `${item.parsed.action} by ${item.parsed.userName || item.parsed.userEmail || item.parsed.userId || "unknown"} on ${item.parsed.lockName || item.parsed.lockId}`)
+              .join("; ")
+          : "Could not parse lock event",
   });
 
   if (request.method === "GET") {
@@ -88,7 +95,7 @@ export async function handleLockWebhook(request: NextRequest, pathToken?: string
 
   let inserted = 0;
   let alerts = 0;
-  for (const item of parsedEvents) {
+  for (const item of monitored) {
     const result = await insertAccessEvent({ source: "webhook", parsed: item.parsed, raw: item.record });
     if (!result.inserted) continue;
     inserted += 1;
@@ -99,6 +106,8 @@ export async function handleLockWebhook(request: NextRequest, pathToken?: string
     return NextResponse.json({
       ok: true,
       received: parsedEvents.map((item) => item.parsed),
+      monitored: monitored.map((item) => item.parsed),
+      ignored,
       inserted,
       alerts,
     });
