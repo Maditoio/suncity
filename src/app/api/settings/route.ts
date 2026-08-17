@@ -70,6 +70,12 @@ export async function POST(request: Request) {
           : body.autoRevokeOnAlert === "false"
             ? false
             : undefined,
+    whitelistEmails:
+      typeof body.whitelistEmails === "string"
+        ? body.whitelistEmails.split(/[\n,;]+/)
+        : Array.isArray(body.whitelistEmails)
+          ? body.whitelistEmails.map((value) => String(value))
+          : undefined,
   });
 
   const nextUser = await getSessionUser();

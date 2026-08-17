@@ -1,5 +1,5 @@
 import { ensureDb } from "./db";
-import { dayBounds, userKey } from "./format";
+import { dayBounds, isWhitelistedEmail, userKey } from "./format";
 import { parseLockEvent } from "./parse";
 import { revokeKey } from "./sera4";
 import { getSettings } from "./settings";
@@ -315,6 +315,7 @@ export async function evaluateAlerts(parsed: ParsedLockEvent) {
   if (parsed.action !== "open") return [];
   if (!parsed.userId && !parsed.userEmail && !parsed.userName) return [];
   const settings = await getSettings();
+  if (isWhitelistedEmail(parsed.userEmail, settings.whitelistEmails)) return [];
   const sql = await ensureDb();
   const key = userKey(parsed);
   const occurred = new Date(parsed.occurredAt);

@@ -4,13 +4,22 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { RefreshCw } from "lucide-react";
 import { CopyField } from "@/components/CopyField";
+import { Pager, usePager } from "@/components/pagination";
 import { AlertKind, StatusPill } from "@/components/Pills";
 import { Button, Card, EmptyState, Field, Input, PageHeader, StatCard } from "@/components/ui";
 
 type Dashboard = {
   webhookUrl: string;
   snapshot: { open: boolean; occurredAt: string; lockName: string | null; lockId: string | null } | null;
-  settings: { lockId: string; maxUsers: number; windowMinutes: number; timezone: string; configured: boolean; autoRevokeOnAlert: boolean };
+  settings: {
+    lockId: string;
+    maxUsers: number;
+    windowMinutes: number;
+    timezone: string;
+    configured: boolean;
+    autoRevokeOnAlert: boolean;
+    whitelistEmails: string[];
+  };
   today: {
     opens: number;
     uniqueUsers: number;
@@ -48,6 +57,10 @@ type Dashboard = {
 
 function nameOf(user: { userName: string | null; userEmail: string | null; userId: string | null }) {
   return user.userName || user.userEmail || (user.userId ? `User ${user.userId}` : "Unknown user");
+}
+
+function isOnDuty(email: string | null, list: string[]) {
+  return Boolean(email && list.includes(email.trim().toLowerCase()));
 }
 
 export default function OverviewPage() {
@@ -92,10 +105,48 @@ export default function OverviewPage() {
   }
 
   return (
+    <OverviewBody
+      data={data}
+      error={error}
+      syncing={syncing}
+      from={from}
+      to={to}
+      setFrom={setFrom}
+      setTo={setTo}
+      sync={sync}
+    />
+  );
+}
+
+function OverviewBody({
+  data,
+  error,
+  syncing,
+  from,
+  to,
+  setFrom,
+  setTo,
+  sync,
+}: {
+  data: Dashboard;
+  error: string;
+  syncing: boolean;
+  from: string;
+  to: string;
+  setFrom: (value: string) => void;
+  setTo: (value: string) => void;
+  sync: () => void;
+}) {
+  const users = usePager(data.today.users, 6);
+  const alerts = usePager(data.alerts, 4);
+  const events = usePager(data.events, 8);
+  const duty = data.settings.whitelistEmails || [];
+
+  return (
     <div className="space-y-6">
       <PageHeader
         title="Door occupancy"
-        description={`Alert when one person opens the lock more than ${data.settings.maxUsers} times in ${data.settings.windowMinutes} minutes.${data.settings.autoRevokeOnAlert ? " Over-limit keys are revoked automatically." : " Over-limit keys are not revoked until you turn that on in Settings."}`}
+        description={`Alert when one person opens the lock more than ${data.settings.maxUsers} times in ${data.settings.windowMinutes} minutes.${data.settings.autoRevokeOnAlert ? " Over-limit keys are revoked automatically." : " Over-limit keys are not revoked until you turn that on in Settings."}${duty.length ? " On-duty emails are excluded." : ""}`}
         actions={
           <>
             <Field label="From">
@@ -147,50 +198,61 @@ export default function OverviewPage() {
       </section>
 
       <section className="grid gap-4 lg:grid-cols-2">
-        <Card title="Same user, same day">
+        <Card title="Same user, same day" padded={false}>
           {data.today.users.length === 0 ? (
             <EmptyState title="No opens recorded yet today." />
           ) : (
-            <ul className="-mx-5">
-              {data.today.users.map((user) => {
-                const over = user.openCount > data.settings.maxUsers;
-                return (
-                  <li
-                    key={user.userKey}
-                    className="flex items-center justify-between gap-3 border-b border-line px-5 py-3 last:border-0"
-                  >
-                    <div>
-                      <p className="text-sm font-medium">{nameOf(user)}</p>
-                      <p className="text-xs text-text-2">{user.userEmail || user.userId || "No email"}</p>
-                    </div>
-                    <span
-                      className={`rounded-full px-2.5 py-1 text-right text-sm font-semibold tabular-nums ${
-                        over ? "bg-danger-soft text-danger" : "bg-surface-2 text-text"
-                      }`}
+            <>
+              <ul>
+                {users.slice.map((user) => {
+                  const onDuty = isOnDuty(user.userEmail, duty);
+                  const over = !onDuty && user.openCount > data.settings.maxUsers;
+                  return (
+                    <li
+                      key={user.userKey}
+                      className="flex items-center justify-between gap-3 border-b border-line px-5 py-3 last:border-0"
                     >
-                      {user.openCount} opens
-                    </span>
-                  </li>
-                );
-              })}
-            </ul>
+                      <div>
+                        <p className="text-sm font-medium">{nameOf(user)}</p>
+                        <p className="text-xs text-text-2">{user.userEmail || user.userId || "No email"}</p>
+                      </div>
+                      <span
+                        className={`rounded-full px-2.5 py-1 text-right text-sm font-semibold tabular-nums ${
+                          onDuty
+                            ? "bg-primary-soft text-primary"
+                            : over
+                              ? "bg-danger-soft text-danger"
+                              : "bg-surface-2 text-text"
+                        }`}
+                      >
+                        {onDuty ? `On duty · ${user.openCount}` : `${user.openCount} opens`}
+                      </span>
+                    </li>
+                  );
+                })}
+              </ul>
+              <Pager page={users.page} pages={users.pages} total={users.total} onPage={users.setPage} noun="people" />
+            </>
           )}
         </Card>
-        <Card title="Latest alerts">
+        <Card title="Latest alerts" padded={false}>
           {data.alerts.length === 0 ? (
             <EmptyState title="No occupancy alerts yet." />
           ) : (
-            <ul className="space-y-3">
-              {data.alerts.slice(0, 6).map((alert) => (
-                <li key={alert.id} className="rounded-[8px] bg-surface-2 px-3 py-3">
-                  <div className="mb-1 flex items-center justify-between gap-2">
-                    <AlertKind kind={alert.kind} />
-                    <span className="text-xs text-text-2">{new Date(alert.occurredAt).toLocaleString()}</span>
-                  </div>
-                  <p className="text-sm">{alert.message}</p>
-                </li>
-              ))}
-            </ul>
+            <>
+              <ul className="space-y-3 p-5">
+                {alerts.slice.map((alert) => (
+                  <li key={alert.id} className="rounded-[8px] bg-surface-2 px-3 py-3">
+                    <div className="mb-1 flex items-center justify-between gap-2">
+                      <AlertKind kind={alert.kind} />
+                      <span className="text-xs text-text-2">{new Date(alert.occurredAt).toLocaleString()}</span>
+                    </div>
+                    <p className="text-sm">{alert.message}</p>
+                  </li>
+                ))}
+              </ul>
+              <Pager page={alerts.page} pages={alerts.pages} total={alerts.total} onPage={alerts.setPage} noun="alerts" />
+            </>
           )}
         </Card>
       </section>
@@ -203,36 +265,39 @@ export default function OverviewPage() {
         {data.events.length === 0 ? (
           <EmptyState title="Waiting for webhook events or an API pull." />
         ) : (
-          <div className="overflow-x-auto">
-            <table className="table">
-              <thead>
-                <tr>
-                  <th>When</th>
-                  <th>User</th>
-                  <th>Access point</th>
-                  <th>Action</th>
-                  <th>Source</th>
-                </tr>
-              </thead>
-              <tbody>
-                {data.events.map((event) => (
-                  <tr key={event.id}>
-                    <td className="whitespace-nowrap text-text-2">{new Date(event.occurredAt).toLocaleString()}</td>
-                    <td>
-                      <p className="font-medium">{nameOf(event)}</p>
-                      {event.userEmail ? <p className="text-xs text-text-2">{event.userEmail}</p> : null}
-                    </td>
-                    <td>
-                      <p>{event.lockName || "—"}</p>
-                      {event.siteName ? <p className="text-xs text-text-2">{event.siteName}</p> : null}
-                    </td>
-                    <td className="capitalize">{event.action}</td>
-                    <td className="capitalize text-text-2">{event.source}</td>
+          <>
+            <div className="overflow-x-auto">
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th>When</th>
+                    <th>User</th>
+                    <th>Access point</th>
+                    <th>Action</th>
+                    <th>Source</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {events.slice.map((event) => (
+                    <tr key={event.id}>
+                      <td className="whitespace-nowrap text-text-2">{new Date(event.occurredAt).toLocaleString()}</td>
+                      <td>
+                        <p className="font-medium">{nameOf(event)}</p>
+                        {event.userEmail ? <p className="text-xs text-text-2">{event.userEmail}</p> : null}
+                      </td>
+                      <td>
+                        <p>{event.lockName || "—"}</p>
+                        {event.siteName ? <p className="text-xs text-text-2">{event.siteName}</p> : null}
+                      </td>
+                      <td className="capitalize">{event.action}</td>
+                      <td className="capitalize text-text-2">{event.source}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <Pager page={events.page} pages={events.pages} total={events.total} onPage={events.setPage} noun="events" />
+          </>
         )}
       </Card>
     </div>

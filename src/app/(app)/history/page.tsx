@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { RefreshCw } from "lucide-react";
+import { Pager, usePager } from "@/components/pagination";
 import { StatusPill } from "@/components/Pills";
 import { Button, EmptyState, Field, Input, PageHeader } from "@/components/ui";
 
@@ -118,42 +119,52 @@ export default function HistoryPage() {
         ) : filtered.length === 0 ? (
           <EmptyState title="No matching records" description="Try another date range or fetch from Sera4." />
         ) : (
-          <table className="table min-w-[720px]">
-            <thead>
-              <tr>
-                <th>When</th>
-                <th>User</th>
-                <th>Access point</th>
-                <th>Action</th>
-                <th>Source</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map((event) => (
-                <tr key={event.id}>
-                  <td className="whitespace-nowrap text-text-2">{new Date(event.occurredAt).toLocaleString()}</td>
-                  <td>
-                    <p className="font-medium">{event.userName || event.userEmail || event.userId || "Unknown"}</p>
-                    <p className="text-xs text-text-2">{event.userEmail || event.userId || "No email"}</p>
-                  </td>
-                  <td>
-                    <p className="font-medium">{event.lockName || event.lockId || "—"}</p>
-                    <p className="text-xs text-text-2">
-                      {[event.siteName, event.hardwareId ? `HW ${event.hardwareId}` : null, event.lockId ? `ID ${event.lockId}` : null]
-                        .filter(Boolean)
-                        .join(" · ") || "—"}
-                    </p>
-                  </td>
-                  <td>
-                    <StatusPill open={event.action === "open" ? true : event.action === "close" ? false : null} />
-                  </td>
-                  <td className="capitalize text-text-2">{event.source}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <HistoryTable events={filtered} />
         )}
       </div>
     </div>
+  );
+}
+
+function HistoryTable({ events }: { events: EventRow[] }) {
+  const pager = usePager(events, 10);
+  return (
+    <>
+      <table className="table min-w-[720px]">
+        <thead>
+          <tr>
+            <th>When</th>
+            <th>User</th>
+            <th>Access point</th>
+            <th>Action</th>
+            <th>Source</th>
+          </tr>
+        </thead>
+        <tbody>
+          {pager.slice.map((event) => (
+            <tr key={event.id}>
+              <td className="whitespace-nowrap text-text-2">{new Date(event.occurredAt).toLocaleString()}</td>
+              <td>
+                <p className="font-medium">{event.userName || event.userEmail || event.userId || "Unknown"}</p>
+                <p className="text-xs text-text-2">{event.userEmail || event.userId || "No email"}</p>
+              </td>
+              <td>
+                <p className="font-medium">{event.lockName || event.lockId || "—"}</p>
+                <p className="text-xs text-text-2">
+                  {[event.siteName, event.hardwareId ? `HW ${event.hardwareId}` : null, event.lockId ? `ID ${event.lockId}` : null]
+                    .filter(Boolean)
+                    .join(" · ") || "—"}
+                </p>
+              </td>
+              <td>
+                <StatusPill open={event.action === "open" ? true : event.action === "close" ? false : null} />
+              </td>
+              <td className="capitalize text-text-2">{event.source}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <Pager page={pager.page} pages={pager.pages} total={pager.total} onPage={pager.setPage} noun="records" />
+    </>
   );
 }

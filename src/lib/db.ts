@@ -133,6 +133,7 @@ async function migrate() {
   `;
 
   await db`ALTER TABLE settings ADD COLUMN IF NOT EXISTS auto_revoke_on_alert BOOLEAN NOT NULL DEFAULT FALSE`;
+  await db`ALTER TABLE settings ADD COLUMN IF NOT EXISTS whitelist_emails_json TEXT NOT NULL DEFAULT '[]'`;
   await db`ALTER TABLE access_events ADD COLUMN IF NOT EXISTS key_id TEXT`;
   await db`ALTER TABLE access_events ADD COLUMN IF NOT EXISTS site_name TEXT`;
   await db`ALTER TABLE access_events ADD COLUMN IF NOT EXISTS hardware_id TEXT`;

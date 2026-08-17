@@ -1,4 +1,5 @@
 import { ensureDb } from "./db";
+import { parseEmailList } from "./format";
 import type { Settings } from "./types";
 
 type SettingsRow = {
@@ -20,6 +21,7 @@ type SettingsRow = {
   alert_on_daily: boolean;
   timezone: string;
   auto_revoke_on_alert?: boolean;
+  whitelist_emails_json?: string;
   admin_username: string;
   admin_password_hash: string;
   admin_password_salt: string;
@@ -52,6 +54,7 @@ function mapSettings(row: SettingsRow): Settings {
     alertOnDaily: asBool(row.alert_on_daily),
     timezone: row.timezone,
     autoRevokeOnAlert: asBool(row.auto_revoke_on_alert),
+    whitelistEmails: parseEmailList(row.whitelist_emails_json),
   };
 }
 
@@ -95,6 +98,9 @@ export async function updateSettings(patch: SettingsPatch) {
     alert_on_daily: patch.alertOnDaily === undefined ? asBool(current.alert_on_daily) : patch.alertOnDaily,
     timezone: patch.timezone ?? current.timezone,
     auto_revoke_on_alert: patch.autoRevokeOnAlert === undefined ? asBool(current.auto_revoke_on_alert) : patch.autoRevokeOnAlert,
+    whitelist_emails_json: JSON.stringify(
+      patch.whitelistEmails === undefined ? parseEmailList(current.whitelist_emails_json) : parseEmailList(patch.whitelistEmails),
+    ),
   };
 
   const sql = await ensureDb();
@@ -118,6 +124,7 @@ export async function updateSettings(patch: SettingsPatch) {
       alert_on_daily = ${next.alert_on_daily},
       timezone = ${next.timezone},
       auto_revoke_on_alert = ${next.auto_revoke_on_alert},
+      whitelist_emails_json = ${next.whitelist_emails_json},
       updated_at = ${new Date().toISOString()}
     WHERE id = 1
   `;

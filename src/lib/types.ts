@@ -19,6 +19,7 @@ export type Settings = {
   alertOnDaily: boolean;
   timezone: string;
   autoRevokeOnAlert: boolean;
+  whitelistEmails: string[];
 };
 
 export type AccessEvent = {

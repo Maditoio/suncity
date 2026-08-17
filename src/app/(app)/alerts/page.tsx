@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Pager, usePager } from "@/components/pagination";
 import { AlertKind } from "@/components/Pills";
 import { Button, Card, EmptyState, PageHeader } from "@/components/ui";
 
@@ -63,50 +64,80 @@ export default function AlertsPage() {
         title="Alerts"
         description="A burst alert means the same person opened the lock more times than allowed in the short window — typically holding the door for extra people."
       />
-      <section className="space-y-3">
-        <h2 className="text-[15px] font-semibold">Needs attention</h2>
-        {loading ? <p className="text-sm text-text-2">Loading…</p> : null}
-        {!loading && open.length === 0 ? (
-          <Card>
-            <EmptyState title="No open alerts" description="Occupancy is within the configured limit." />
-          </Card>
-        ) : null}
-        {open.map((alert) => (
-          <article key={alert.id} className="card p-5">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <AlertKind kind={alert.kind} />
-              <p className="text-sm text-text-2">{new Date(alert.occurredAt).toLocaleString()}</p>
-            </div>
-            <p className="mt-3 text-[15px] leading-6">{alert.message}</p>
-            {alert.userEmail ? <p className="mt-1 text-sm text-text-2">{alert.userEmail}</p> : null}
-            {alert.revokedAt ? <p className="mt-1 text-sm text-primary">Sera4 key revoked</p> : null}
-            {alert.revokeError ? <p className="mt-1 text-sm text-danger">{alert.revokeError}</p> : null}
-            <p className="mt-1 text-right text-sm font-semibold tabular-nums text-text-2">{alert.openCount} opens</p>
-            <div className="mt-4 flex flex-wrap gap-2">
-              <Button onClick={() => ack(alert.id)}>Acknowledge</Button>
-              {!alert.revokedAt ? (
-                <Button variant="danger" onClick={() => revoke(alert.id)}>
-                  Revoke Sera4 key
-                </Button>
-              ) : null}
-            </div>
-          </article>
-        ))}
-      </section>
-      {done.length ? (
-        <section className="space-y-3">
-          <h2 className="text-[15px] font-semibold">Acknowledged</h2>
-          {done.map((alert) => (
-            <article key={alert.id} className="card p-5 opacity-70">
-              <div className="flex items-center justify-between gap-3">
-                <AlertKind kind={alert.kind} />
-                <p className="text-sm text-text-2">{new Date(alert.occurredAt).toLocaleString()}</p>
-              </div>
-              <p className="mt-3 text-sm">{alert.message}</p>
-            </article>
-          ))}
-        </section>
-      ) : null}
+      <OpenAlerts loading={loading} alerts={open} ack={ack} revoke={revoke} />
+      {done.length ? <DoneAlerts alerts={done} /> : null}
     </div>
+  );
+}
+
+function OpenAlerts({
+  loading,
+  alerts,
+  ack,
+  revoke,
+}: {
+  loading: boolean;
+  alerts: AlertRow[];
+  ack: (id: number) => void;
+  revoke: (id: number) => void;
+}) {
+  const pager = usePager(alerts, 4);
+  return (
+    <section className="space-y-3">
+      <h2 className="text-[15px] font-semibold">Needs attention</h2>
+      {loading ? <p className="text-sm text-text-2">Loading…</p> : null}
+      {!loading && alerts.length === 0 ? (
+        <Card>
+          <EmptyState title="No open alerts" description="Occupancy is within the configured limit." />
+        </Card>
+      ) : null}
+      {pager.slice.map((alert) => (
+        <article key={alert.id} className="card p-5">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <AlertKind kind={alert.kind} />
+            <p className="text-sm text-text-2">{new Date(alert.occurredAt).toLocaleString()}</p>
+          </div>
+          <p className="mt-3 text-[15px] leading-6">{alert.message}</p>
+          {alert.userEmail ? <p className="mt-1 text-sm text-text-2">{alert.userEmail}</p> : null}
+          {alert.revokedAt ? <p className="mt-1 text-sm text-primary">Sera4 key revoked</p> : null}
+          {alert.revokeError ? <p className="mt-1 text-sm text-danger">{alert.revokeError}</p> : null}
+          <p className="mt-1 text-right text-sm font-semibold tabular-nums text-text-2">{alert.openCount} opens</p>
+          <div className="mt-4 flex flex-wrap gap-2">
+            <Button onClick={() => ack(alert.id)}>Acknowledge</Button>
+            {!alert.revokedAt ? (
+              <Button variant="danger" onClick={() => revoke(alert.id)}>
+                Revoke Sera4 key
+              </Button>
+            ) : null}
+          </div>
+        </article>
+      ))}
+      {alerts.length ? (
+        <div className="card">
+          <Pager page={pager.page} pages={pager.pages} total={pager.total} onPage={pager.setPage} noun="alerts" />
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+function DoneAlerts({ alerts }: { alerts: AlertRow[] }) {
+  const pager = usePager(alerts, 4);
+  return (
+    <section className="space-y-3">
+      <h2 className="text-[15px] font-semibold">Acknowledged</h2>
+      {pager.slice.map((alert) => (
+        <article key={alert.id} className="card p-5 opacity-70">
+          <div className="flex items-center justify-between gap-3">
+            <AlertKind kind={alert.kind} />
+            <p className="text-sm text-text-2">{new Date(alert.occurredAt).toLocaleString()}</p>
+          </div>
+          <p className="mt-3 text-sm">{alert.message}</p>
+        </article>
+      ))}
+      <div className="card">
+        <Pager page={pager.page} pages={pager.pages} total={pager.total} onPage={pager.setPage} noun="alerts" />
+      </div>
+    </section>
   );
 }

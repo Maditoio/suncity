@@ -25,6 +25,7 @@ type Settings = {
   timezone: string;
   adminUsername: string;
   autoRevokeOnAlert: boolean;
+  whitelistEmails: string;
   hasTwsPass: boolean;
   hasTwsOrgToken: boolean;
   hasTwsUserToken: boolean;
@@ -50,6 +51,7 @@ const empty: Settings = {
   timezone: "Europe/Berlin",
   adminUsername: "admin",
   autoRevokeOnAlert: false,
+  whitelistEmails: "",
   hasTwsPass: false,
   hasTwsOrgToken: false,
   hasTwsUserToken: false,
@@ -66,7 +68,7 @@ export default function SettingsPage() {
   useEffect(() => {
     void (async () => {
       const response = await fetch("/api/settings");
-      setForm((await response.json()) as Settings);
+      setForm(asForm((await response.json()) as Settings));
     })();
   }, []);
 
@@ -87,7 +89,7 @@ export default function SettingsPage() {
       setStatus(json.error || "Could not save");
       return;
     }
-    setForm(json);
+    setForm(asForm(json));
     setAdminPassword("");
     setCurrentPassword("");
     setStatus("Saved");
@@ -111,7 +113,7 @@ export default function SettingsPage() {
     setRaw(JSON.stringify(json, null, 2));
     if (json.token) {
       const settings = await fetch("/api/settings");
-      setForm((await settings.json()) as Settings);
+      setForm(asForm((await settings.json()) as Settings));
       setStatus("Bearer token updated");
     } else {
       setStatus(json.error || "No token returned — check sign-in path or paste TwsUserToken from Postman");
@@ -183,6 +185,20 @@ export default function SettingsPage() {
           />
           Also alert if the same user exceeds this count in a full day
         </label>
+      </Card>
+
+      <Card
+        title="On-duty whitelist"
+        description="These emails can open the lock as many times as needed. They will not trigger occupancy alerts or automatic key revoke."
+      >
+        <Field label="Whitelisted emails" hint="One email per line. Example: security@site.com">
+          <Textarea
+            rows={5}
+            value={form.whitelistEmails}
+            onChange={(e) => set("whitelistEmails", e.target.value)}
+            placeholder={"guard@example.com\nnightshift@example.com"}
+          />
+        </Field>
       </Card>
 
       <Card
@@ -267,6 +283,13 @@ export default function SettingsPage() {
       ) : null}
     </form>
   );
+}
+
+function asForm(json: Settings & { whitelistEmails?: string[] | string }): Settings {
+  return {
+    ...json,
+    whitelistEmails: Array.isArray(json.whitelistEmails) ? json.whitelistEmails.join("\n") : json.whitelistEmails || "",
+  };
 }
 
 function TextField({
