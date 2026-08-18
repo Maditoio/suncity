@@ -748,7 +748,7 @@ export async function restoreDueKeys(now = new Date()) {
             text: result.text.slice(0, 500),
           }),
           parsedOk: true,
-          note: `Issued a new Sera4 key${newId ? ` ${newId}` : ""} for ${row.userEmail || row.user_id || person}`,
+          note: `Issued a new Sera4 key${newId ? ` ${newId}` : ""} for ${row.user_email || row.user_id || person}`,
         });
         results.restored += 1;
       } else {
@@ -765,7 +765,7 @@ export async function restoreDueKeys(now = new Date()) {
             text: result.text.slice(0, 500),
           }),
           parsedOk: false,
-          note: `Failed to reissue Sera4 key for ${row.userEmail || row.user_id || person}: ${result.status}`,
+          note: `Failed to reissue Sera4 key for ${row.user_email || row.user_id || person}: ${result.status}`,
         });
         results.failed += 1;
       }
@@ -777,7 +777,7 @@ export async function restoreDueKeys(now = new Date()) {
         headers: {},
         body: JSON.stringify({ alertId: row.id, userEmail: row.user_email, userId: row.user_id }),
         parsedOk: false,
-        note: `Failed to reissue Sera4 key for ${row.userEmail || row.user_id || person}: ${message}`,
+        note: `Failed to reissue Sera4 key for ${row.user_email || row.user_id || person}: ${message}`,
       });
       results.failed += 1;
     }
