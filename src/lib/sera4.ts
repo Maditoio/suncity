@@ -87,23 +87,104 @@ export async function sera4Send(method: string, path: string, body?: unknown) {
   return { ok: response.ok, status: response.status, url, json, text };
 }
 
+type Sera4Result = Awaited<ReturnType<typeof sera4Send>>;
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
+}
+
+function numericOrString(value: string) {
+  return /^\d+$/.test(value) ? Number(value) : value;
+}
+
+async function withSera4AuthRetry(run: () => Promise<Sera4Result>) {
+  let result = await run();
+  if (result.status !== 401) return result;
+  try {
+    const signed = await signInForToken();
+    if (signed.token) {
+      const { updateSettings } = await import("./settings");
+      await updateSettings({ twsUserToken: signed.token });
+      result = await run();
+    }
+  } catch {
+    // Keep the original 401 so the caller can record why Sera4 rejected the request.
+  }
+  return result;
+}
+
 export async function revokeKey(keyId: string) {
   if (!keyId) throw new Error("Key id is missing");
   const path = `/keys/${encodeURIComponent(keyId)}`;
-  let result = await sera4Send("DELETE", path);
-  if (result.status === 401) {
-    try {
-      const signed = await signInForToken();
-      if (signed.token) {
-        const { updateSettings } = await import("./settings");
-        await updateSettings({ twsUserToken: signed.token });
-        result = await sera4Send("DELETE", path);
-      }
-    } catch {
-      // Keep the original 401 so the alert records why revoke failed.
+  return withSera4AuthRetry(() => sera4Send("DELETE", path));
+}
+
+export async function fetchKey(keyId: string) {
+  if (!keyId) throw new Error("Key id is missing");
+  return withSera4AuthRetry(() => sera4Get(`/keys/${encodeURIComponent(keyId)}`));
+}
+
+export function buildKeyCreateBody(
+  fetched: unknown,
+  fallback: { lockId: string; membershipId: string },
+) {
+  const root = asRecord(fetched);
+  const nested = asRecord(root?.data) || asRecord(root?.key) || asRecord(root?.object) || root;
+  const omit = new Set([
+    "id",
+    "created_at",
+    "updated_at",
+    "deleted",
+    "deleted_at",
+    "revoked",
+    "revoked_at",
+    "lock",
+    "user",
+    "site",
+    "organization",
+  ]);
+  const key: Record<string, unknown> = {};
+  if (nested) {
+    for (const [name, value] of Object.entries(nested)) {
+      if (omit.has(name) || value == null || typeof value === "object") continue;
+      key[name] = value;
     }
   }
-  return result;
+  if (!key.lock_id && !key.lockId && fallback.lockId) key.lock_id = numericOrString(fallback.lockId);
+  if (!key.membership_id && !key.membershipId && fallback.membershipId) key.membership_id = fallback.membershipId;
+  return { key };
+}
+
+export async function createKey(body: unknown) {
+  const attempts: { path: string; body: unknown }[] = [{ path: "/keys", body }];
+  const record = asRecord(body);
+  const inner = asRecord(record?.key) || record;
+  const lockId = inner ? String(inner.lock_id ?? inner.lockId ?? "") : "";
+  const membershipId = inner ? String(inner.membership_id ?? inner.membershipId ?? "") : "";
+  if (lockId && membershipId) {
+    attempts.push({
+      path: "/keys",
+      body: { lock_id: numericOrString(lockId), membership_id: membershipId },
+    });
+    attempts.push({
+      path: `/locks/${encodeURIComponent(lockId)}/keys`,
+      body: { key: { membership_id: membershipId } },
+    });
+  }
+  let last = await withSera4AuthRetry(() => sera4Send("POST", attempts[0].path, attempts[0].body));
+  if (last.ok || last.status === 201 || last.status === 409) return last;
+  for (const attempt of attempts.slice(1)) {
+    last = await withSera4AuthRetry(() => sera4Send("POST", attempt.path, attempt.body));
+    if (last.ok || last.status === 201 || last.status === 409) return last;
+  }
+  return last;
+}
+
+export function createdKeyId(json: unknown) {
+  const root = asRecord(json);
+  const nested = asRecord(root?.data) || asRecord(root?.key) || root;
+  const id = nested?.id;
+  return id == null ? null : String(id);
 }
 
 export async function fetchLockStatus() {

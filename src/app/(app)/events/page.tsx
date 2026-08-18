@@ -54,7 +54,7 @@ export default function EventsPage() {
       <Card title="How the webhook works">
         <ol className="list-decimal space-y-2 pl-5 text-sm leading-6 text-text-2">
           <li>Copy the webhook URL from Settings and paste it into Sera4 as the lock open/close callback.</li>
-          <li>When someone opens or closes the lock, Sera4 POSTs that event to Lock Watch immediately.</li>
+          <li>When someone opens or closes the lock, Sera4 POSTs that event to Inclusive Lock Monitor immediately.</li>
           <li>We record who opened it, then count that user’s opens in the burst window and for the day.</li>
           <li>If they go beyond 4 opens, an alert appears. Pulling access history does the same check for past records.</li>
         </ol>

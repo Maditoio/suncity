@@ -1,4 +1,4 @@
-# Lock Watch
+# Inclusive Lock Monitor
 
 Admin app for a Sera4 lock: pull access history, listen for open/close webhooks, and alert when one person opens the door more times than allowed in a short window.
 
@@ -33,6 +33,7 @@ Open [http://localhost:3000](http://localhost:3000). Tables are created automati
 2. Add the same environment variables. Set `APP_PUBLIC_URL` to your Vercel URL, for example `https://your-app.vercel.app`. `ADMIN_USERNAME` and `ADMIN_PASSWORD` are used only to create the first admin row; later logins use the `admins` and `sessions` tables.
 3. Use a hosted Postgres provider and paste its connection string into `DATABASE_URL`. Prefer the pooled URL if the provider offers one (Neon pooler, Supabase transaction pooler, or Vercel Postgres).
 4. Deploy. After the first successful request, sign in and open **Settings**.
+5. Optional: set `CRON_SECRET` in Vercel. Vercel will send it on the one daily restore job (07:00 UTC / 09:00 GMT+2).
 
 ## Sera4 setup
 
@@ -44,4 +45,4 @@ Open [http://localhost:3000](http://localhost:3000). Tables are created automati
 
 ## Alerts
 
-If the same user opens the lock more than **4** times in **10** minutes (both configurable), Lock Watch raises a burst alert. Daily totals are also tracked and can alert on the same limit.
+If the same user opens the lock more than **4** times in **10** minutes (both configurable), Inclusive Lock Monitor raises a burst alert. Daily totals are also tracked and can alert on the same limit. When auto-revoke is on, the Sera4 key is deleted and a new key is issued at **09:00 GMT+2 the following day** (one Vercel cron run per day).

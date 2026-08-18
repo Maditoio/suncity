@@ -1,7 +1,8 @@
 import { ensureDb } from "./db";
 import { dayBounds, isWhitelistedEmail, userKey } from "./format";
 import { parseLockEvent } from "./parse";
-import { revokeKey } from "./sera4";
+import { nextRestoreAt } from "./restore";
+import { buildKeyCreateBody, createKey, createdKeyId, fetchKey, revokeKey } from "./sera4";
 import { getSettings } from "./settings";
 import type { AccessEvent, AlertRow, ParsedLockEvent, UserDayStat, WebhookLog } from "./types";
 
@@ -513,6 +514,10 @@ async function insertAlert(input: {
     keyId: input.parsed.keyId,
     revokedAt: null,
     revokeError: null,
+    restoreAfter: null,
+    restoredAt: null,
+    restoredKeyId: null,
+    restoreError: null,
   };
 }
 
@@ -532,6 +537,10 @@ function mapAlert(row: {
   key_id: string | null;
   revoked_at: string | null;
   revoke_error: string | null;
+  restore_after?: string | null;
+  restored_at?: string | null;
+  restored_key_id?: string | null;
+  restore_error?: string | null;
 }): AlertRow {
   return {
     id: Number(row.id),
@@ -549,6 +558,10 @@ function mapAlert(row: {
     keyId: row.key_id,
     revokedAt: row.revoked_at,
     revokeError: row.revoke_error,
+    restoreAfter: row.restore_after ?? null,
+    restoredAt: row.restored_at ?? null,
+    restoredKeyId: row.restored_key_id ?? null,
+    restoreError: row.restore_error ?? null,
   };
 }
 
@@ -567,6 +580,18 @@ async function listAlertsByIds(ids: number[]) {
 
 async function applyKeyRevoke(alertId: number, keyId: string) {
   const sql = await ensureDb();
+  const settings = await getSettings();
+  const alertRows = await sql<{ user_id: string | null }[]>`SELECT user_id FROM alerts WHERE id = ${alertId} LIMIT 1`;
+  const membershipId = alertRows[0]?.user_id || "";
+  let restorePayload = buildKeyCreateBody(null, { lockId: settings.lockId, membershipId });
+  try {
+    const fetched = await fetchKey(keyId);
+    if (fetched.ok) {
+      restorePayload = buildKeyCreateBody(fetched.json, { lockId: settings.lockId, membershipId });
+    }
+  } catch {
+    // Fall back to lock id + membership id if Sera4 will not return the current key.
+  }
   try {
     const result = await revokeKey(keyId);
     const gone = result.ok || result.status === 404;
@@ -578,14 +603,20 @@ async function applyKeyRevoke(alertId: number, keyId: string) {
       note: gone ? `Revoked Sera4 key ${keyId}` : `Failed to revoke Sera4 key ${keyId}: ${result.status}`,
     });
     if (gone) {
+      const restoreAfter = nextRestoreAt();
       await sql`
         UPDATE alerts SET
           key_id = ${keyId},
           revoked_at = ${new Date().toISOString()},
           revoke_error = NULL,
+          restore_after = ${restoreAfter},
+          restore_payload_json = ${JSON.stringify(restorePayload)},
+          restored_at = NULL,
+          restored_key_id = NULL,
+          restore_error = NULL,
           message = CASE
             WHEN message LIKE ${`%Sera4 key ${keyId} was revoked.%`} THEN message
-            ELSE message || ${` Sera4 key ${keyId} was revoked.`}
+            ELSE message || ${` Sera4 key ${keyId} was revoked. A new key is issued at 09:00 GMT+2 the following day.`}
           END
         WHERE id = ${alertId}
       `;
@@ -632,6 +663,127 @@ export async function revokeAlertKey(alertId: number) {
   }
   if (!keyId) throw new Error("No Sera4 key id is stored for this alert yet");
   return applyKeyRevoke(alert.id, keyId);
+}
+
+const MAX_USERS_PER_RUN = 30;
+
+export async function restoreDueKeys(now = new Date()) {
+  const sql = await ensureDb();
+  const settings = await getSettings();
+  const rows = await sql<
+    {
+      id: number;
+      user_id: string | null;
+      user_name: string | null;
+      user_email: string | null;
+      restore_payload_json: string | null;
+    }[]
+  >`
+    SELECT DISTINCT ON (COALESCE(lower(user_email), user_id, user_name, 'unknown'))
+      id, user_id, user_name, user_email, restore_payload_json
+    FROM alerts
+    WHERE revoked_at IS NOT NULL
+      AND restored_at IS NULL
+      AND restore_after IS NOT NULL
+      AND restore_after <= ${now.toISOString()}
+    ORDER BY COALESCE(lower(user_email), user_id, user_name, 'unknown'), restore_after ASC, id ASC
+    LIMIT ${MAX_USERS_PER_RUN}
+  `;
+
+  const results = { restored: 0, failed: 0, skipped: 0, pending: rows.length };
+
+  for (const row of rows) {
+    const person = userKey({ userId: row.user_id, userEmail: row.user_email, userName: row.user_name });
+    let body: unknown = null;
+    try {
+      body = row.restore_payload_json ? JSON.parse(row.restore_payload_json) : null;
+    } catch {
+      body = null;
+    }
+    if (!body) {
+      if (!row.user_id || !settings.lockId) {
+        const error = "Cannot reissue key: membership id or lock id is missing";
+        await sql`UPDATE alerts SET restore_error = ${error} WHERE id = ${row.id}`;
+        await logWebhook({
+          method: "RESTORE",
+          headers: {},
+          body: JSON.stringify({ alertId: row.id, userEmail: row.user_email, userId: row.user_id }),
+          parsedOk: false,
+          note: error,
+        });
+        results.failed += 1;
+        continue;
+      }
+      body = buildKeyCreateBody(null, { lockId: settings.lockId, membershipId: row.user_id });
+    }
+
+    try {
+      const result = await createKey(body);
+      const ok = result.ok || result.status === 201 || result.status === 409;
+      if (ok) {
+        const newId = createdKeyId(result.json);
+        const at = new Date().toISOString();
+        await sql`
+          UPDATE alerts SET
+            restored_at = ${at},
+            restored_key_id = ${newId},
+            restore_error = NULL,
+            message = CASE
+              WHEN message LIKE ${"%A new Sera4 key was issued the next morning.%"} THEN message
+              ELSE message || ${" A new Sera4 key was issued the next morning."}
+            END
+          WHERE revoked_at IS NOT NULL
+            AND restored_at IS NULL
+            AND COALESCE(lower(user_email), user_id, user_name, 'unknown') = ${person}
+        `;
+        await logWebhook({
+          method: "RESTORE",
+          headers: {},
+          body: JSON.stringify({
+            alertId: row.id,
+            userEmail: row.user_email,
+            userId: row.user_id,
+            status: result.status,
+            newKeyId: newId,
+            text: result.text.slice(0, 500),
+          }),
+          parsedOk: true,
+          note: `Issued a new Sera4 key${newId ? ` ${newId}` : ""} for ${row.userEmail || row.user_id || person}`,
+        });
+        results.restored += 1;
+      } else {
+        const error = `Sera4 returned ${result.status}${result.text ? `: ${result.text.slice(0, 240)}` : ""}`;
+        await sql`UPDATE alerts SET restore_error = ${error} WHERE id = ${row.id}`;
+        await logWebhook({
+          method: "RESTORE",
+          headers: {},
+          body: JSON.stringify({
+            alertId: row.id,
+            userEmail: row.user_email,
+            userId: row.user_id,
+            status: result.status,
+            text: result.text.slice(0, 500),
+          }),
+          parsedOk: false,
+          note: `Failed to reissue Sera4 key for ${row.userEmail || row.user_id || person}: ${result.status}`,
+        });
+        results.failed += 1;
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Key restore failed";
+      await sql`UPDATE alerts SET restore_error = ${message} WHERE id = ${row.id}`;
+      await logWebhook({
+        method: "RESTORE",
+        headers: {},
+        body: JSON.stringify({ alertId: row.id, userEmail: row.user_email, userId: row.user_id }),
+        parsedOk: false,
+        note: `Failed to reissue Sera4 key for ${row.userEmail || row.user_id || person}: ${message}`,
+      });
+      results.failed += 1;
+    }
+  }
+
+  return results;
 }
 
 export async function acknowledgeAlert(id: number) {

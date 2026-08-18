@@ -18,6 +18,7 @@ import {
   Sun,
   X,
 } from "lucide-react";
+import { APP_NAME, APP_TAGLINE } from "@/lib/brand";
 
 const groups = [
   {
@@ -53,7 +54,7 @@ export function AppShell({ username, children }: { username: string; children: R
   const [menuOpen, setMenuOpen] = useState(false);
   const [dark, setDark] = useState(false);
   const [search, setSearch] = useState("");
-  const page = titles[pathname] || { crumb: "Lock Watch", title: "Overview" };
+  const page = titles[pathname] || { crumb: APP_NAME, title: "Overview" };
 
   useEffect(() => {
     const saved = localStorage.getItem("lockwatch-theme");
@@ -142,8 +143,8 @@ export function AppShell({ username, children }: { username: string; children: R
           </span>
           {!collapsed ? (
             <div className="min-w-0">
-              <p className="truncate text-sm font-semibold">Lock Watch</p>
-              <p className="truncate text-[11px] text-text-2">Occupancy monitor</p>
+              <p className="truncate text-sm font-semibold">{APP_NAME}</p>
+              <p className="truncate text-[11px] text-text-2">{APP_TAGLINE}</p>
             </div>
           ) : null}
           <button

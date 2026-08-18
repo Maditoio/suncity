@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Manrope } from "next/font/google";
+import { APP_NAME } from "@/lib/brand";
 import "./globals.css";
 
 const manrope = Manrope({
@@ -8,7 +9,7 @@ const manrope = Manrope({
 });
 
 export const metadata: Metadata = {
-  title: "Lock Watch",
+  title: APP_NAME,
   description: "Sera4 lock access monitoring and occupancy alerts",
 };
 

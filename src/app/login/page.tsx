@@ -4,6 +4,7 @@ import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Shield } from "lucide-react";
 import { Button, Field, Input } from "@/components/ui";
+import { APP_NAME } from "@/lib/brand";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -39,7 +40,7 @@ export default function LoginPage() {
             <Shield className="h-5 w-5" />
           </span>
           <div>
-            <h1 className="text-lg font-semibold">Lock Watch</h1>
+            <h1 className="text-lg font-semibold">{APP_NAME}</h1>
             <p className="text-sm text-text-2">Admin sign in</p>
           </div>
         </div>

@@ -20,6 +20,9 @@ type AlertRow = {
   keyId: string | null;
   revokedAt: string | null;
   revokeError: string | null;
+  restoreAfter: string | null;
+  restoredAt: string | null;
+  restoreError: string | null;
 };
 
 export default function AlertsPage() {
@@ -100,6 +103,13 @@ function OpenAlerts({
           <p className="mt-3 text-[15px] leading-6">{alert.message}</p>
           {alert.userEmail ? <p className="mt-1 text-sm text-text-2">{alert.userEmail}</p> : null}
           {alert.revokedAt ? <p className="mt-1 text-sm text-primary">Sera4 key revoked</p> : null}
+          {alert.revokedAt && !alert.restoredAt && alert.restoreAfter ? (
+            <p className="mt-1 text-sm text-text-2">
+              New key at 09:00 GMT+2 the following day ({new Date(alert.restoreAfter).toLocaleString()})
+            </p>
+          ) : null}
+          {alert.restoredAt ? <p className="mt-1 text-sm text-primary">New Sera4 key issued</p> : null}
+          {alert.restoreError ? <p className="mt-1 text-sm text-danger">{alert.restoreError}</p> : null}
           {alert.revokeError ? <p className="mt-1 text-sm text-danger">{alert.revokeError}</p> : null}
           <p className="mt-1 text-right text-sm font-semibold tabular-nums text-text-2">{alert.openCount} opens</p>
           <div className="mt-4 flex flex-wrap gap-2">

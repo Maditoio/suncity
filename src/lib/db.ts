@@ -140,6 +140,12 @@ async function migrate() {
   await db`ALTER TABLE alerts ADD COLUMN IF NOT EXISTS key_id TEXT`;
   await db`ALTER TABLE alerts ADD COLUMN IF NOT EXISTS revoked_at TEXT`;
   await db`ALTER TABLE alerts ADD COLUMN IF NOT EXISTS revoke_error TEXT`;
+  await db`ALTER TABLE alerts ADD COLUMN IF NOT EXISTS restore_after TEXT`;
+  await db`ALTER TABLE alerts ADD COLUMN IF NOT EXISTS restore_payload_json TEXT`;
+  await db`ALTER TABLE alerts ADD COLUMN IF NOT EXISTS restored_at TEXT`;
+  await db`ALTER TABLE alerts ADD COLUMN IF NOT EXISTS restored_key_id TEXT`;
+  await db`ALTER TABLE alerts ADD COLUMN IF NOT EXISTS restore_error TEXT`;
+  await scheduleExistingRevokes(db);
 
   const existing = await db`SELECT id FROM settings WHERE id = 1`;
   if (existing.length === 0) {
@@ -157,6 +163,18 @@ async function migrate() {
 
   await seedAdmin(db);
   await repairWebhookEvents(db);
+}
+
+async function scheduleExistingRevokes(db: postgres.Sql) {
+  const { nextRestoreAt } = await import("./restore");
+  const rows = await db<{ id: number; revoked_at: string }[]>`
+    SELECT id, revoked_at FROM alerts
+    WHERE revoked_at IS NOT NULL AND restored_at IS NULL AND restore_after IS NULL
+  `;
+  for (const row of rows) {
+    const when = nextRestoreAt(new Date(row.revoked_at));
+    await db`UPDATE alerts SET restore_after = ${when} WHERE id = ${row.id}`;
+  }
 }
 
 async function repairWebhookEvents(db: postgres.Sql) {

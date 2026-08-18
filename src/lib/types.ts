@@ -56,6 +56,10 @@ export type AlertRow = {
   keyId: string | null;
   revokedAt: string | null;
   revokeError: string | null;
+  restoreAfter: string | null;
+  restoredAt: string | null;
+  restoredKeyId: string | null;
+  restoreError: string | null;
 };
 
 export type WebhookLog = {

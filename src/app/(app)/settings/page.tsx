@@ -142,7 +142,7 @@ export default function SettingsPage() {
 
       <Card
         title="Revoke key on limit violation"
-        description="When true, the user's Sera4 key is deleted automatically as soon as they exceed the open limit. When false, Lock Watch only records an alert."
+        description="When true, the user's Sera4 key is deleted as soon as they exceed the open limit. A new key is created automatically at 09:00 GMT+2 the following day. When false, Inclusive Lock Monitor only records an alert."
       >
         <Field label="Automatically revoke Sera4 key">
           <select
@@ -155,7 +155,7 @@ export default function SettingsPage() {
           </select>
         </Field>
         <p className="mt-3 text-sm text-text-2">
-          Save after changing this. Keep TwsUser and TwsPass filled so an expired Bearer token can be refreshed before the key is deleted.
+          Save after changing this. Keep TwsUser and TwsPass filled so an expired Bearer token can be refreshed before the key is deleted or reissued. Vercel calls this automatically once a day around 09:00 GMT+2 and reissues a key for every revoked user.
         </p>
       </Card>
 
