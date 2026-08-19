@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { requireApiUser } from "@/lib/auth";
+import { getSessionUser, requireAdmin, requireApiUser } from "@/lib/auth";
+import { logAction } from "@/lib/audit";
 import { extractHistoryRecords } from "@/lib/parse";
 import { fetchAccessHistory, fetchLockStatus, signInForToken } from "@/lib/sera4";
 import { ingestRecords } from "@/lib/store";
@@ -39,6 +40,16 @@ export async function POST(request: NextRequest) {
     const [status, history] = await Promise.all([fetchLockStatus(), fetchAccessHistory(query)]);
     const records = extractHistoryRecords(history.json);
     const ingested = await ingestRecords("api", records);
+    const user = await getSessionUser();
+    if (user) {
+      await logAction({
+        actorId: user.id,
+        actorUsername: user.username,
+        actorRole: user.role,
+        action: "pulled_history",
+        detail: `${query.from} to ${query.to}`,
+      });
+    }
     return NextResponse.json({
       ok: status.ok && history.ok,
       status,
@@ -62,6 +73,16 @@ export async function GET(request: NextRequest) {
     const history = await fetchAccessHistory(query);
     const records = extractHistoryRecords(history.json);
     const ingested = history.ok ? await ingestRecords("api", records) : { inserted: 0, alerts: 0 };
+    const user = await getSessionUser();
+    if (user && history.ok) {
+      await logAction({
+        actorId: user.id,
+        actorUsername: user.username,
+        actorRole: user.role,
+        action: "pulled_history",
+        detail: `${query.from} to ${query.to}`,
+      });
+    }
     return NextResponse.json({
       ok: history.ok,
       url: history.url,
@@ -77,12 +98,21 @@ export async function GET(request: NextRequest) {
 }
 
 export async function PUT() {
-  const denied = await requireApiUser();
+  const denied = await requireAdmin();
   if (denied) return denied;
   try {
     const result = await signInForToken();
     if (result.token) {
       await updateSettings({ twsUserToken: result.token });
+    }
+    const user = await getSessionUser();
+    if (user) {
+      await logAction({
+        actorId: user.id,
+        actorUsername: user.username,
+        actorRole: user.role,
+        action: "refreshed_token",
+      });
     }
     return NextResponse.json(result);
   } catch (error) {

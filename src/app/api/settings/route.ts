@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
-import { getSessionUser, requireApiUser, updateAdminAccount } from "@/lib/auth";
+import { getSessionUser, requireAdmin, updateAdminAccount } from "@/lib/auth";
+import { logAction } from "@/lib/audit";
 import { publicSettings, updateSettings } from "@/lib/settings";
 
 export async function GET() {
-  const denied = await requireApiUser();
+  const denied = await requireAdmin();
   if (denied) return denied;
   const user = await getSessionUser();
   return NextResponse.json({
@@ -13,7 +14,7 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
-  const denied = await requireApiUser();
+  const denied = await requireAdmin();
   if (denied) return denied;
   const user = await getSessionUser();
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -76,6 +77,14 @@ export async function POST(request: Request) {
         : Array.isArray(body.whitelistEmails)
           ? body.whitelistEmails.map((value) => String(value))
           : undefined,
+  });
+
+  await logAction({
+    actorId: user.id,
+    actorUsername: user.username,
+    actorRole: user.role,
+    action: "updated_settings",
+    detail: "Changed API, webhook, or occupancy rules",
   });
 
   const nextUser = await getSessionUser();

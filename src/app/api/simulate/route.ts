@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
-import { requireApiUser } from "@/lib/auth";
+import { requireAdmin } from "@/lib/auth";
 import { evaluateIdentifiedAccess, insertAccessEvent, logWebhook } from "@/lib/store";
 import { getSettings } from "@/lib/settings";
 
 export async function POST(request: Request) {
-  const denied = await requireApiUser();
+  const denied = await requireAdmin();
   if (denied) return denied;
   const body = (await request.json()) as { userName?: string; action?: "open" | "close" };
   const settings = await getSettings();

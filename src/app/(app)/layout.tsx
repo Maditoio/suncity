@@ -7,5 +7,5 @@ export const dynamic = "force-dynamic";
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const user = await getSessionUser();
   if (!user) redirect("/login");
-  return <AppShell username={user.username}>{children}</AppShell>;
+  return <AppShell username={user.username} role={user.role}>{children}</AppShell>;
 }

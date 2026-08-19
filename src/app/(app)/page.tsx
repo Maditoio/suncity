@@ -169,11 +169,15 @@ function OverviewBody({
         <div className="card border-warn bg-warn-soft px-5 py-4">
           <p className="font-medium">Connect Sera4 in Settings</p>
           <p className="mt-1 text-sm text-text-2">
-            Add TwsHost, tokens, and lock ID, then paste the webhook URL into Sera4 for live open/close events.
+            {data.webhookUrl
+              ? "Add TwsHost, tokens, and lock ID, then paste the webhook URL into Sera4 for live open/close events."
+              : "Ask an admin to connect Sera4 in Settings. Operators cannot change API or webhook settings."}
           </p>
-          <Link href="/settings" className="mt-3 inline-block text-sm font-semibold text-primary">
-            Open settings
-          </Link>
+          {data.webhookUrl ? (
+            <Link href="/settings" className="mt-3 inline-block text-sm font-semibold text-primary">
+              Open settings
+            </Link>
+          ) : null}
         </div>
       ) : null}
 
@@ -257,9 +261,11 @@ function OverviewBody({
         </Card>
       </section>
 
-      <Card title="Webhook for lock open/close" description="Paste this exact URL into Sera4, including the token in the path.">
-        <CopyField value={data.webhookUrl} />
-      </Card>
+      {data.webhookUrl ? (
+        <Card title="Webhook for lock open/close" description="Paste this exact URL into Sera4, including the token in the path.">
+          <CopyField value={data.webhookUrl} />
+        </Card>
+      ) : null}
 
       <Card title="Recent activity" padded={false}>
         {data.events.length === 0 ? (

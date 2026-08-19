@@ -46,3 +46,5 @@ Open [http://localhost:3000](http://localhost:3000). Tables are created automati
 ## Alerts
 
 If the same user opens the lock more than **4** times in **10** minutes (both configurable), Inclusive Lock Monitor raises a burst alert. Daily totals are also tracked and can alert on the same limit. When auto-revoke is on, the Sera4 key is deleted and a new key is issued at **09:00 GMT+2 the following day** (one Vercel cron run per day).
+
+Admins can add **operator** users in Settings. Operators can view occupancy, history, and alerts, but cannot open Settings or the webhook log. Sign-in and other actions for every user, including admins, are written to the **Activity log**.

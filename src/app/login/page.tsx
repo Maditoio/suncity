@@ -67,7 +67,7 @@ export default function LoginPage() {
             {busy ? "Signing in…" : "Sign in"}
           </Button>
         </form>
-        <p className="mt-6 text-sm text-text-2">Admin accounts live in PostgreSQL. Change the password in Settings after the first sign-in.</p>
+        <p className="mt-6 text-sm text-text-2">Accounts live in PostgreSQL. Admins can add operator users in Settings.</p>
       </div>
     </div>
   );

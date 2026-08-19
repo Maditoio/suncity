@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { CopyField } from "@/components/CopyField";
+import { UsersPanel } from "@/components/UsersPanel";
 import { Button, Card, Field, Input, PageHeader, Textarea } from "@/components/ui";
 
 type Settings = {
@@ -121,6 +122,7 @@ export default function SettingsPage() {
   }
 
   return (
+    <div className="space-y-6">
     <form onSubmit={save} className="space-y-6">
       <PageHeader
         title="Settings"
@@ -132,6 +134,11 @@ export default function SettingsPage() {
         }
       />
       {status ? <p className="text-sm text-text-2">{status}</p> : null}
+    </form>
+
+      <UsersPanel />
+
+      <form onSubmit={save} className="space-y-6">
 
       <Card
         title="Webhook URL"
@@ -282,6 +289,7 @@ export default function SettingsPage() {
         <pre className="max-h-80 overflow-auto rounded-[10px] bg-[#12151c] p-4 text-xs text-[#e8ecf2]">{raw}</pre>
       ) : null}
     </form>
+    </div>
   );
 }
 

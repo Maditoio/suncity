@@ -145,6 +145,20 @@ async function migrate() {
   await db`ALTER TABLE alerts ADD COLUMN IF NOT EXISTS restored_at TEXT`;
   await db`ALTER TABLE alerts ADD COLUMN IF NOT EXISTS restored_key_id TEXT`;
   await db`ALTER TABLE alerts ADD COLUMN IF NOT EXISTS restore_error TEXT`;
+  await db`ALTER TABLE admins ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT 'admin'`;
+  await db`
+    CREATE TABLE IF NOT EXISTS audit_logs (
+      id SERIAL PRIMARY KEY,
+      actor_id INTEGER,
+      actor_username TEXT NOT NULL,
+      actor_role TEXT NOT NULL DEFAULT 'unknown',
+      action TEXT NOT NULL,
+      detail TEXT,
+      created_at TEXT NOT NULL
+    )
+  `;
+  await db`CREATE INDEX IF NOT EXISTS idx_audit_created ON audit_logs(created_at)`;
+  await db`CREATE INDEX IF NOT EXISTS idx_audit_actor ON audit_logs(actor_id)`;
   await scheduleExistingRevokes(db);
 
   const existing = await db`SELECT id FROM settings WHERE id = 1`;
@@ -317,12 +331,13 @@ async function seedAdmin(db: postgres.Sql) {
   if (inherited?.admin_password_hash && inherited.admin_password_salt) {
     const username = inherited.admin_username || "admin";
     await db`
-      INSERT INTO admins (username, username_key, password_hash, password_salt, created_at, updated_at)
+      INSERT INTO admins (username, username_key, password_hash, password_salt, role, created_at, updated_at)
       VALUES (
         ${username},
         ${username.trim().toLowerCase()},
         ${inherited.admin_password_hash},
         ${inherited.admin_password_salt},
+        ${"admin"},
         ${now},
         ${now}
       )
@@ -334,12 +349,13 @@ async function seedAdmin(db: postgres.Sql) {
   const password = process.env.ADMIN_PASSWORD || "lockwatch";
   const salt = randomBytes(16).toString("hex");
   await db`
-    INSERT INTO admins (username, username_key, password_hash, password_salt, created_at, updated_at)
+    INSERT INTO admins (username, username_key, password_hash, password_salt, role, created_at, updated_at)
     VALUES (
       ${username},
       ${username.trim().toLowerCase()},
       ${hashPassword(password, salt)},
       ${salt},
+      ${"admin"},
       ${now},
       ${now}
     )

@@ -6,6 +6,7 @@ import { FormEvent, useEffect, useMemo, useState } from "react";
 import {
   Bell,
   ChevronLeft,
+  ClipboardList,
   History,
   LayoutDashboard,
   LogOut,
@@ -20,7 +21,9 @@ import {
 } from "lucide-react";
 import { APP_NAME, APP_TAGLINE } from "@/lib/brand";
 
-const groups = [
+type NavItem = { href: string; label: string; icon: typeof LayoutDashboard; admin?: boolean };
+
+const groups: { label: string; items: NavItem[] }[] = [
   {
     label: "Monitor",
     items: [
@@ -32,8 +35,9 @@ const groups = [
   {
     label: "System",
     items: [
-      { href: "/events", label: "Webhook log", icon: Radio },
-      { href: "/settings", label: "Settings", icon: Settings },
+      { href: "/activity", label: "Activity log", icon: ClipboardList, admin: true },
+      { href: "/events", label: "Webhook log", icon: Radio, admin: true },
+      { href: "/settings", label: "Settings", icon: Settings, admin: true },
     ],
   },
 ];
@@ -42,11 +46,20 @@ const titles: Record<string, { crumb: string; title: string }> = {
   "/": { crumb: "Monitor", title: "Overview" },
   "/history": { crumb: "Monitor", title: "Access history" },
   "/alerts": { crumb: "Monitor", title: "Alerts" },
+  "/activity": { crumb: "System", title: "Activity log" },
   "/events": { crumb: "System", title: "Webhook log" },
   "/settings": { crumb: "System", title: "Settings" },
 };
 
-export function AppShell({ username, children }: { username: string; children: React.ReactNode }) {
+export function AppShell({
+  username,
+  role,
+  children,
+}: {
+  username: string;
+  role: "admin" | "operator";
+  children: React.ReactNode;
+}) {
   const pathname = usePathname();
   const router = useRouter();
   const [collapsed, setCollapsed] = useState(false);
@@ -88,9 +101,16 @@ export function AppShell({ username, children }: { username: string; children: R
 
   const initials = useMemo(() => username.slice(0, 2).toUpperCase(), [username]);
 
+  const visibleGroups = groups
+    .map((group) => ({
+      ...group,
+      items: group.items.filter((item) => !item.admin || role === "admin"),
+    }))
+    .filter((group) => group.items.length > 0);
+
   const nav = (
     <nav className="flex-1 space-y-5 overflow-y-auto px-3 py-4">
-      {groups.map((group) => (
+      {visibleGroups.map((group) => (
         <div key={group.label}>
           {!collapsed ? (
             <p className="mb-2 px-2 text-[11px] font-semibold tracking-wider text-text-2 uppercase">{group.label}</p>
@@ -210,7 +230,10 @@ export function AppShell({ username, children }: { username: string; children: R
             </button>
             {menuOpen ? (
               <div className="absolute top-11 right-0 w-48 rounded-[10px] border border-line bg-surface py-1 shadow-[var(--shadow)]">
-                <p className="px-3 py-2 text-xs text-text-2">Signed in as {username}</p>
+                <p className="px-3 py-2 text-xs text-text-2">
+                  Signed in as {username}
+                  <span className="mt-1 block capitalize">{role}</span>
+                </p>
                 <button
                   onClick={logout}
                   className="flex w-full items-center gap-2 px-3 py-2 text-sm text-text hover:bg-surface-2"
